@@ -21,38 +21,40 @@ if (!pet) {
 }
 
 const [
-  { data: groomingRows },
+  { data: allGroomings },
   { data: flightRows },
-  { count: vaccineCount },
-  { count: visitCount },
+  { data: allVaccines },
+  { data: allVetVisits },
   { data: weightRecords },
-  { data: recentVaccines },
   { data: foods },
   { data: lastAntipulgas },
   { data: lastDesparasitante },
-  { data: lastVetVisit },
   { count: weightCount },
-  { count: groomingCount },
   { count: flightCount },
-  { data: allVaccineNames },
+  { data: activityLogs },
 ] = await Promise.all([
-  supabase.from('groomings').select('type, date').eq('pet_id', pet.id).order('date', { ascending: false }).limit(1),
+  supabase.from('groomings').select('type, date').eq('pet_id', pet.id).order('date', { ascending: false }),
   supabase.from('flights').select('origin, destination, flight_date').eq('pet_id', pet.id).order('flight_date', { ascending: false }).limit(1),
-  supabase.from('vaccines').select('*', { count: 'exact', head: true }).eq('pet_id', pet.id),
-  supabase.from('vet_visits').select('*', { count: 'exact', head: true }).eq('pet_id', pet.id),
-  supabase.from('weight_records').select('weight_kg, date').eq('pet_id', pet.id).order('date', { ascending: false }).limit(2),
-  supabase.from('vaccines').select('name, date_given').eq('pet_id', pet.id).order('date_given', { ascending: false }).limit(4),
+  supabase.from('vaccines').select('name, date_given').eq('pet_id', pet.id).order('date_given', { ascending: false }),
+  supabase.from('vet_visits').select('date, reason').eq('pet_id', pet.id).order('date', { ascending: false }),
+  supabase.from('weight_records').select('weight_kg, date').eq('pet_id', pet.id).order('date', { ascending: false }),
   supabase.from('foods').select('brand, daily_grams, bag_size, bag_unit, price, type, start_date, created_at').eq('pet_id', pet.id).order('created_at', { ascending: false }),
   supabase.from('preventive_treatments').select('date_given, product_name').eq('pet_id', pet.id).eq('type', 'antipulgas').order('date_given', { ascending: false }).limit(1),
   supabase.from('preventive_treatments').select('date_given, product_name').eq('pet_id', pet.id).eq('type', 'desparasitante').order('date_given', { ascending: false }).limit(1),
-  supabase.from('vet_visits').select('date, reason').eq('pet_id', pet.id).order('date', { ascending: false }).limit(1),
   supabase.from('weight_records').select('*', { count: 'exact', head: true }).eq('pet_id', pet.id),
-  supabase.from('groomings').select('*', { count: 'exact', head: true }).eq('pet_id', pet.id),
   supabase.from('flights').select('*', { count: 'exact', head: true }).eq('pet_id', pet.id),
-  supabase.from('vaccines').select('name').eq('pet_id', pet.id),
+  supabase.from('activity_logs').select('date, walks, duration_minutes').eq('pet_id', pet.id).order('date', { ascending: false }).limit(60),
 ]);
 
-const lastGrooming = groomingRows?.[0] ?? null;
+// Derived counts and recent items from full queries
+const vaccineCount = allVaccines?.length ?? 0;
+const visitCount = allVetVisits?.length ?? 0;
+const groomingCount = allGroomings?.length ?? 0;
+const lastGrooming = allGroomings?.[0] ?? null;
+const lastVetVisit = allVetVisits?.[0] ?? null;
+const recentVaccines = allVaccines?.slice(0, 4) ?? [];
+const allVaccineNames = allVaccines ?? [];
+
 const lastFlight = flightRows?.[0] ?? null;
 
 // Food insights
@@ -87,7 +89,7 @@ const avgCostPerDay = foodsWithCost.length
     }, 0) / foodsWithCost.length).toFixed(2)
   : null;
 
-// Vitality Score
+// Vitality Score — same full data as /salud for consistent results
 const vitalityInput: ScoreInput = {
   pet: {
     breed: pet.breed ?? null,
@@ -97,10 +99,10 @@ const vitalityInput: ScoreInput = {
     is_neutered: pet.is_neutered ?? null,
   },
   weightRecords: weightRecords ?? [],
-  vaccines: recentVaccines?.map(v => ({ name: v.name, date_given: new Date().toISOString() })) ?? [],
-  vetVisits: [],
-  groomings: lastGrooming ? [{ date: lastGrooming.date }] : [],
-  activityLogs: [],
+  vaccines: allVaccines ?? [],
+  vetVisits: allVetVisits ?? [],
+  groomings: (allGroomings ?? []).map(g => ({ date: g.date })),
+  activityLogs: activityLogs ?? [],
   foods: activeFoods,
 };
 const dashScore = calculateVitalityScore(vitalityInput);
@@ -135,7 +137,7 @@ function daysUntilNext(lastDateStr: string | null | undefined): { daysLeft: numb
   return { daysLeft, overdue: daysLeft < 0, lastDate: lastDateStr };
 }
 
-const lastVet = lastVetVisit?.[0] ?? null;
+const lastVet = lastVetVisit;
 const daysSinceVet = lastVet?.date
   ? Math.floor((Date.now() - new Date(lastVet.date).getTime()) / (1000 * 60 * 60 * 24))
   : null;
@@ -147,10 +149,11 @@ const birthday = pet.birth_date ? isBirthday(pet.birth_date) : false;
 const age = pet.birth_date ? calculateAge(pet.birth_date) : null;
 const photoUrl = pet.photo_url || '/icons/default-pet.svg';
 
-// Breed fact — random on each page load, fallback to generic facts
+// Breed fact — rotates daily based on day-of-year, fallback to generic facts
 const breedFacts = pet.breed ? BREED_FACTS[pet.breed as DogBreed] : BREED_FACTS['Other'];
+const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
 const dailyFact = breedFacts?.length
-  ? breedFacts[Math.floor(Math.random() * breedFacts.length)]
+  ? breedFacts[dayOfYear % breedFacts.length]
   : null;
 
 // Weight trend

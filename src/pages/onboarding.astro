@@ -506,10 +506,12 @@ const breedFactsB64 = Buffer.from(JSON.stringify(BREED_FACTS)).toString('base64'
         breedOtherInput.classList.toggle('hidden', val !== 'Other');
         if (val !== 'Other') breedOtherInput.value = '';
 
-        // Show fun facts
+        // Show 2 random fun facts (save the rest for the dashboard)
         const facts = factsData[val];
         if (facts && facts.length > 0) {
-          factsList.innerHTML = facts.map(f =>
+          const shuffled = [...facts].sort(() => Math.random() - 0.5);
+          const picked = shuffled.slice(0, 2);
+          factsList.innerHTML = picked.map(f =>
             `<div class="flex items-start gap-2">
               <span class="text-base shrink-0 leading-tight">${f.emoji}</span>
               <p class="text-xs text-ink/80 leading-relaxed">${f.fact}</p>
