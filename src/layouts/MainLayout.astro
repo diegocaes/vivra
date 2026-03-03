@@ -21,6 +21,17 @@ const { pet: activePet, pets } = user
 
 // Theme color: user-selected, falls back to 'orange'
 const petTheme = activePet?.theme_color || 'orange';
+
+// Notification unread count
+let unreadCount = 0;
+if (user) {
+  const { count } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .eq('read', false);
+  unreadCount = count ?? 0;
+}
 ---
 
 <!doctype html>
@@ -44,7 +55,7 @@ const petTheme = activePet?.theme_color || 'orange';
     <ClientRouter />
   </head>
   <body class="min-h-screen bg-canvas" data-pet-theme={petTheme}>
-    <Sidebar activePet={activePet} pets={pets} />
+    <Sidebar activePet={activePet} pets={pets} unreadCount={unreadCount} />
 
     <!-- Mobile top bar spacer -->
     <div class="h-13 lg:hidden"></div>

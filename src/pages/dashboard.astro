@@ -189,6 +189,102 @@ const checklistItems = [
   { done: (weightRecords?.length ?? 0) > 0, href: '/salud/peso?new=1', label: 'Registrar peso',      sub: 'Lleva el historial de peso desde hoy',          iconColor: 'bg-sky-50',    iconStroke: 'text-sky-500',   icon: '<circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 0 1 8 0"/><line x1="12" y1="12" x2="12" y2="8"/>' },
   { done: profileComplete,            href: '/perfil',              label: 'Completar perfil',          sub: 'Foto, microchip, color de pelaje',               iconColor: 'bg-amber/10',  iconStroke: 'text-amber-dark',icon: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>' },
 ].filter(item => !item.done);
+
+// ── Notification generation (compare current state vs snapshot cookie) ──
+try {
+  const rawSnapshot = Astro.cookies.get('pet_snapshot')?.value;
+  const snapshot = rawSnapshot ? JSON.parse(rawSnapshot) as { badgeCount?: number; score?: number; petId?: string; foodNotified?: boolean; antipulgasNotified?: boolean; desparasitanteNotified?: boolean } : null;
+  const isSamePet = snapshot?.petId === pet.id;
+  const prevBadgeCount = (isSamePet ? snapshot?.badgeCount : null) ?? 0;
+  const prevScore = (isSamePet ? snapshot?.score : null) ?? 0;
+
+  const newNotifications: Array<{ type: string; title: string; message: string; icon: string; href: string }> = [];
+
+  // New badges earned since last visit
+  if (badgeResult.earnedCount > prevBadgeCount) {
+    const newCount = badgeResult.earnedCount - prevBadgeCount;
+    // Get the names of recently earned badges (best effort — take last N earned)
+    const recentlyEarned = earnedBadges.slice(0, newCount);
+    for (const badge of recentlyEarned) {
+      newNotifications.push({
+        type: 'badge_earned',
+        title: '¡Nueva insignia!',
+        message: `Ganaste "${badge.name}"`,
+        icon: '🏆',
+        href: '/badges',
+      });
+    }
+  }
+
+  // Score improved by 5+ points
+  if (dashScore.showScore && dashScore.total >= prevScore + 5 && prevScore > 0) {
+    newNotifications.push({
+      type: 'score_improved',
+      title: '¡Score mejoró!',
+      message: `El bienestar de ${pet.name} subió a ${dashScore.total}/100`,
+      icon: '📈',
+      href: '/salud',
+    });
+  }
+
+  // Food running out (≤5 days left, notify once per cycle)
+  if (daysLeft !== null && daysLeft <= 5 && !(isSamePet && snapshot?.foodNotified)) {
+    newNotifications.push({
+      type: 'food_low',
+      title: '🍖 Comida por acabarse',
+      message: daysLeft === 0
+        ? `La bolsa de ${currentFood?.brand || 'alimento'} ya debería haberse acabado`
+        : `Quedan ~${daysLeft} día${daysLeft !== 1 ? 's' : ''} de ${currentFood?.brand || 'alimento'}`,
+      icon: '🍖',
+      href: '/alimentacion',
+    });
+  }
+
+  // Antipulgas due (≤3 days left or overdue, notify once per cycle)
+  if (antipulgasInfo.lastDate && antipulgasInfo.daysLeft <= 3 && !(isSamePet && snapshot?.antipulgasNotified)) {
+    newNotifications.push({
+      type: 'preventive_due',
+      title: antipulgasInfo.overdue ? '⚠️ Antipulgas vencido' : '🐛 Antipulgas próximo',
+      message: antipulgasInfo.overdue
+        ? `El antipulgas de ${pet.name} ya venció. Aplícalo cuanto antes.`
+        : `Faltan ${antipulgasInfo.daysLeft} día${antipulgasInfo.daysLeft !== 1 ? 's' : ''} para el antipulgas de ${pet.name}`,
+      icon: '🐛',
+      href: '/dashboard',
+    });
+  }
+
+  // Desparasitante due (≤3 days left or overdue, notify once per cycle)
+  if (desparasitanteInfo.lastDate && desparasitanteInfo.daysLeft <= 3 && !(isSamePet && snapshot?.desparasitanteNotified)) {
+    newNotifications.push({
+      type: 'preventive_due',
+      title: desparasitanteInfo.overdue ? '⚠️ Desparasitante vencido' : '💊 Desparasitante próximo',
+      message: desparasitanteInfo.overdue
+        ? `El desparasitante de ${pet.name} ya venció. Aplícalo cuanto antes.`
+        : `Faltan ${desparasitanteInfo.daysLeft} día${desparasitanteInfo.daysLeft !== 1 ? 's' : ''} para el desparasitante de ${pet.name}`,
+      icon: '💊',
+      href: '/dashboard',
+    });
+  }
+
+  // Insert all new notifications
+  if (newNotifications.length > 0) {
+    await supabase.from('notifications').insert(
+      newNotifications.map(n => ({ ...n, user_id: user.id, pet_id: pet.id }))
+    );
+  }
+
+  // Update snapshot cookie
+  Astro.cookies.set('pet_snapshot', JSON.stringify({
+    badgeCount: badgeResult.earnedCount,
+    score: dashScore.total,
+    petId: pet.id,
+    foodNotified: daysLeft !== null && daysLeft <= 5,
+    antipulgasNotified: antipulgasInfo.lastDate && antipulgasInfo.daysLeft <= 3,
+    desparasitanteNotified: desparasitanteInfo.lastDate && desparasitanteInfo.daysLeft <= 3,
+  }), { path: '/', httpOnly: true, sameSite: 'lax', maxAge: 60 * 60 * 24 * 365, secure: import.meta.env.PROD });
+} catch (_) {
+  // Silently ignore if notifications table doesn't exist yet
+}
 ---
 
 <MainLayout title="Inicio">

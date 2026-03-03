@@ -4,9 +4,10 @@ import type { Pet } from '../types/supabase';
 interface Props {
   activePet: Pet | null;
   pets: Pet[];
+  unreadCount?: number;
 }
 
-const { activePet, pets } = Astro.props;
+const { activePet, pets, unreadCount = 0 } = Astro.props;
 const currentPath = Astro.url.pathname;
 
 const navItems = [
@@ -106,8 +107,19 @@ function petInitial(name: string) {
     ))}
   </nav>
 
-  <!-- Bottom: profile + faq -->
+  <!-- Bottom: notifications + profile + faq -->
   <div class="px-3 py-4 border-t border-white/5 space-y-0.5">
+    <a href="/notificaciones" class:list={['sidebar-link', isActive('/notificaciones') && 'active']}>
+      <div class="relative">
+        <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+        </svg>
+        {unreadCount > 0 && (
+          <span class="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
+        )}
+      </div>
+      <span>Notificaciones</span>
+    </a>
     <a href="/perfil" class:list={['sidebar-link', isActive('/perfil') && 'active']}>
       <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
@@ -134,6 +146,19 @@ function petInitial(name: string) {
   <a href="/" class="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
     <img src="/PetLog-logo.svg" alt="PetLog" class="h-8 w-auto" style="filter:brightness(0) invert(1);" />
   </a>
+  <div class="flex items-center gap-1">
+    <a
+      href="/notificaciones"
+      class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
+      aria-label="Notificaciones"
+    >
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+      </svg>
+      {unreadCount > 0 && (
+        <span class="absolute top-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
+      )}
+    </a>
   <button
     id="mobile-menu-btn"
     type="button"
@@ -143,6 +168,7 @@ function petInitial(name: string) {
     <svg id="menu-icon-open" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
     <svg id="menu-icon-close" class="h-5 w-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
   </button>
+  </div>
 </header>
 
 <!-- ─── MOBILE DRAWER ─────────────────────────────── -->
@@ -225,6 +251,17 @@ function petInitial(name: string) {
     </nav>
 
     <div class="px-3 py-4 border-t border-white/5 space-y-0.5">
+      <a href="/notificaciones" class:list={['sidebar-link', isActive('/notificaciones') && 'active']}>
+        <div class="relative">
+          <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+          </svg>
+          {unreadCount > 0 && (
+            <span class="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
+          )}
+        </div>
+        <span>Notificaciones</span>
+      </a>
       <a href="/perfil" class:list={['sidebar-link', isActive('/perfil') && 'active']}>
         <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>

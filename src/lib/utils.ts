@@ -65,6 +65,21 @@ export function formatDateShort(dateStr: string): string {
   });
 }
 
+/** Retorna cuánto tiempo pasó desde un timestamp ISO (ej: "hace 2 horas") */
+export function timeAgo(isoStr: string): string {
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Justo ahora';
+  if (mins < 60) return `Hace ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Hace ${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Ayer';
+  if (days < 30) return `Hace ${days} días`;
+  const months = Math.floor(days / 30);
+  return `Hace ${months} mes${months !== 1 ? 'es' : ''}`;
+}
+
 /** Retorna cuánto tiempo falta hasta una fecha */
 export function timeUntil(dateStr: string): string {
   const target = new Date(dateStr + 'T00:00:00');
