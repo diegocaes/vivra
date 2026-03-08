@@ -18,7 +18,7 @@ if (Astro.request.method === 'POST') {
   if (action === 'add_flight') {
     const { count: flightCount } = await supabase.from('flights').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id);
     if (isAtLimit('maxFlights', flightCount ?? 0, premium)) {
-      return Astro.redirect('/viajes?toast_error=' + encodeURIComponent('Limite de vuelos alcanzado. Desbloquea Premium para vuelos ilimitados.'));
+      return Astro.redirect('/viajes?toast_error=' + encodeURIComponent('Límite alcanzado. Refiere un amigo o suscríbete a Premium para ilimitados.'));
     }
     const flightData: Record<string, unknown> = {
       pet_id: pet.id,

@@ -1,6 +1,6 @@
 ---
 import MainLayout from '../../layouts/MainLayout.astro';
-import SaludTabs from '../../components/SaludTabs.astro';
+
 import { formatDate } from '../../lib/utils';
 import { getActivePet } from '../../lib/pet';
 
@@ -20,6 +20,7 @@ if (Astro.request.method === 'POST') {
       date_given: formData.get('date_given') as string,
       product_name: (formData.get('product_name') as string) || null,
       lot_number: (formData.get('lot_number') as string) || null,
+      cost: formData.get('cost') ? Number(formData.get('cost')) : null,
       notes: (formData.get('notes') as string) || null,
     });
     return Astro.redirect('/salud/preventivos?saved=1');
@@ -62,7 +63,10 @@ const deleted  = Astro.url.searchParams.get('deleted') === '1';
 ---
 
 <MainLayout title="Preventivos">
-  <SaludTabs />
+  <a href="/salud" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-4">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    Salud
+  </a>
 
   {/* ── STATUS CARDS ── */}
   <div class="grid grid-cols-2 gap-3 mb-6 animate-fade-up">
@@ -169,6 +173,18 @@ const deleted  = Astro.url.searchParams.get('deleted') === '1';
           </div>
 
           <div>
+            <label class="block text-xs font-medium text-muted mb-1">Costo (opcional)</label>
+            <input
+              type="number"
+              name="cost"
+              step="0.01"
+              min="0"
+              placeholder="Ej: 25.00"
+              class="w-full rounded-xl border border-card-border bg-canvas px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent transition-colors"
+            />
+          </div>
+
+          <div>
             <label class="block text-xs font-medium text-muted mb-1">Notas (opcional)</label>
             <textarea
               name="notes"
@@ -208,7 +224,7 @@ const deleted  = Astro.url.searchParams.get('deleted') === '1';
             <div class="h-9 w-9 shrink-0 flex items-center justify-center rounded-xl bg-green-50 text-base">🐛</div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-semibold text-ink">{t.product_name || 'Antipulgas'}</p>
-              <p class="text-[11px] text-muted">{formatDate(t.date_given)}{t.lot_number ? ` · Lote: ${t.lot_number}` : ''}</p>
+              <p class="text-[11px] text-muted">{formatDate(t.date_given)}{t.lot_number ? ` · Lote: ${t.lot_number}` : ''}{t.cost ? ` · $${t.cost}` : ''}</p>
               {t.notes && <p class="text-[11px] text-muted/70 truncate mt-0.5">{t.notes}</p>}
             </div>
             <form method="POST">
@@ -241,7 +257,7 @@ const deleted  = Astro.url.searchParams.get('deleted') === '1';
             <div class="h-9 w-9 shrink-0 flex items-center justify-center rounded-xl bg-blue-50 text-base">💊</div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-semibold text-ink">{t.product_name || 'Desparasitante'}</p>
-              <p class="text-[11px] text-muted">{formatDate(t.date_given)}{t.lot_number ? ` · Lote: ${t.lot_number}` : ''}</p>
+              <p class="text-[11px] text-muted">{formatDate(t.date_given)}{t.lot_number ? ` · Lote: ${t.lot_number}` : ''}{t.cost ? ` · $${t.cost}` : ''}</p>
               {t.notes && <p class="text-[11px] text-muted/70 truncate mt-0.5">{t.notes}</p>}
             </div>
             <form method="POST">

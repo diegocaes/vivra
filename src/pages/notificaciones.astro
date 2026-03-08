@@ -1,35 +1,40 @@
 ---
 import MainLayout from '../layouts/MainLayout.astro';
 import { timeAgo } from '../lib/utils';
+import { getActivePet } from '../lib/pet';
 
-const { supabase, user } = Astro.locals;
+const { supabase, user, activePetId } = Astro.locals;
+const { pet: activePet } = await getActivePet(supabase, user.id, activePetId);
 
 // Handle clear all action
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   if (formData.get('_action') === 'clear_all') {
-    await supabase
-      .from('notifications')
-      .delete()
-      .eq('user_id', user.id);
+    let delQuery = supabase.from('notifications').delete().eq('user_id', user.id);
+    if (activePet) delQuery = delQuery.eq('pet_id', activePet.id);
+    await delQuery;
     return Astro.redirect('/notificaciones?cleared=1');
   }
 }
 
-// Mark all as read on page visit
-await supabase
+// Mark all as read on page visit (only for active pet)
+let markQuery = supabase
   .from('notifications')
   .update({ read: true })
   .eq('user_id', user.id)
   .eq('read', false);
+if (activePet) markQuery = markQuery.eq('pet_id', activePet.id);
+await markQuery;
 
-// Fetch all notifications (most recent first, last 50)
-const { data: notifications } = await supabase
+// Fetch notifications for active pet (most recent first, last 50)
+let fetchQuery = supabase
   .from('notifications')
-  .select('id, type, title, message, icon, href, read, created_at')
+  .select('id, type, title, message, icon, href, read, created_at, pet_id')
   .eq('user_id', user.id)
   .order('created_at', { ascending: false })
   .limit(50);
+if (activePet) fetchQuery = fetchQuery.eq('pet_id', activePet.id);
+const { data: notifications } = await fetchQuery;
 
 const items = notifications ?? [];
 const cleared = Astro.url.searchParams.has('cleared');

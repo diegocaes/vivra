@@ -24,14 +24,16 @@ const { pet: activePet, pets } = user
 // Theme color: user-selected, falls back to 'orange'
 const petTheme = activePet?.theme_color || 'orange';
 
-// Notification unread count
+// Notification unread count (filtered by active pet)
 let unreadCount = 0;
 if (user) {
-  const { count } = await supabase
+  let query = supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
     .eq('read', false);
+  if (activePet) query = query.eq('pet_id', activePet.id);
+  const { count } = await query;
   unreadCount = count ?? 0;
 }
 
@@ -40,15 +42,6 @@ const premium: PremiumStatus = user
   ? await getPremiumStatus(supabase, user.id)
   : { isPremium: false, plan: 'free', source: null, daysLeft: 0, isTrial: false, isExpiringSoon: false };
 
-// Flight count — used by Sidebar to conditionally show Viajes nav item
-let flightCount = 0;
-if (user && activePet) {
-  const { count } = await supabase
-    .from('flights')
-    .select('id', { count: 'exact', head: true })
-    .eq('pet_id', activePet.id);
-  flightCount = count ?? 0;
-}
 ---
 
 <!doctype html>
@@ -72,7 +65,7 @@ if (user && activePet) {
     <ClientRouter />
   </head>
   <body class="min-h-screen bg-canvas" data-pet-theme={petTheme}>
-    <Sidebar activePet={activePet} pets={pets} unreadCount={unreadCount} flightCount={flightCount} />
+    <Sidebar activePet={activePet} pets={pets} unreadCount={unreadCount} />
 
     <!-- Mobile top bar spacer -->
     <div class="h-13 lg:hidden"></div>

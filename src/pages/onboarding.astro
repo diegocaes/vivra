@@ -27,7 +27,7 @@ if (!isAddMode && hasPet) {
 if (isAddMode) {
   const premium = await getPremiumStatus(supabase, user.id);
   if (isAtLimit('maxPets', existingPets?.length ?? 0, premium)) {
-    return Astro.redirect('/premium');
+    return Astro.redirect('/premium?toast_error=' + encodeURIComponent('Para agregar otra mascota necesitas Premium. Refiere un amigo o suscríbete para desbloquear.'));
   }
 }
 

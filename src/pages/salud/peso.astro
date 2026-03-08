@@ -1,7 +1,7 @@
 ---
 import MainLayout from '../../layouts/MainLayout.astro';
 import Card from '../../components/ui/Card.astro';
-import SaludTabs from '../../components/SaludTabs.astro';
+
 import EmptyState from '../../components/ui/EmptyState.astro';
 import PremiumGate from '../../components/ui/PremiumGate.astro';
 import WeightChart from '../../components/WeightChart.tsx';
@@ -22,7 +22,7 @@ if (Astro.request.method === 'POST') {
     // Check weight record limit for free users
     const { count: weightCount } = await supabase.from('weight_records').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id);
     if (isAtLimit('maxWeightRecords', weightCount ?? 0, premium)) {
-      return Astro.redirect('/salud/peso?toast_error=' + encodeURIComponent('Limite de registros alcanzado. Desbloquea Premium para registros ilimitados.'));
+      return Astro.redirect('/salud/peso?toast_error=' + encodeURIComponent('Límite alcanzado. Refiere un amigo o suscríbete a Premium para ilimitados.'));
     }
     const weightKg = Number(formData.get('weight_kg'));
     await supabase.from('weight_records').insert({
@@ -56,7 +56,10 @@ const maxWeight = records && records.length > 0 ? Math.max(...records.map(r => r
 ---
 
 <MainLayout title="Control de Peso">
-  <SaludTabs />
+  <a href="/salud" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-4">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    Salud
+  </a>
 
   {/* ── ANALYTICS ── */}
   {records && records.length > 0 ? (
@@ -74,7 +77,7 @@ const maxWeight = records && records.length > 0 ? Math.max(...records.map(r => r
           )}
         </div>
         {records.length >= 2 && (
-          <PremiumGate isPremium={premium.isPremium} feature="weightChart" title="Grafica de peso" description="Visualiza la evolucion del peso con graficas detalladas.">
+          <PremiumGate isPremium={premium.isPremium} feature="weightChart" title="Grafica de peso" description="Graficas detalladas del peso. Refiere un amigo o suscríbete para desbloquear.">
             <WeightChart records={records} client:load />
           </PremiumGate>
         )}

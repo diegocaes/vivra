@@ -1,6 +1,6 @@
 ---
 import MainLayout from '../../layouts/MainLayout.astro';
-import SaludTabs from '../../components/SaludTabs.astro';
+
 import { formatDate } from '../../lib/utils';
 import { getActivePet } from '../../lib/pet';
 
@@ -53,7 +53,10 @@ const todayLog = (logs ?? []).find(l => l.date === today);
 ---
 
 <MainLayout title="Actividad">
-  <SaludTabs />
+  <a href="/salud" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-4">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    Salud
+  </a>
 
   {/* ── STATS CARDS ── */}
   <div class="grid grid-cols-3 gap-3 mb-5 animate-fade-up">

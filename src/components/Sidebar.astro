@@ -5,10 +5,9 @@ interface Props {
   activePet: Pet | null;
   pets: Pet[];
   unreadCount?: number;
-  flightCount?: number;
 }
 
-const { activePet, pets, unreadCount = 0, flightCount = 0 } = Astro.props;
+const { activePet, pets, unreadCount = 0 } = Astro.props;
 const currentPath = Astro.url.pathname;
 
 const navItems = [
@@ -16,8 +15,6 @@ const navItems = [
   { href: '/salud',         match: '/salud',        label: 'Salud',      icon: 'heart' },
   { href: '/alimentacion',  match: '/alimentacion', label: 'Comida',     icon: 'food' },
   { href: '/badges',        match: '/badges',       label: 'Insignias',  icon: 'trophy' },
-  // Viajes: only show if user has at least 1 flight registered
-  ...(flightCount > 0 ? [{ href: '/viajes', match: '/viajes', label: 'Vuelos', icon: 'plane' }] : []),
 ];
 
 function isActive(match: string): boolean {
