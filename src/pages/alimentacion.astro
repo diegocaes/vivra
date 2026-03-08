@@ -3,8 +3,10 @@ import MainLayout from '../layouts/MainLayout.astro';
 import Card from '../components/ui/Card.astro';
 import SectionHeader from '../components/ui/SectionHeader.astro';
 import EmptyState from '../components/ui/EmptyState.astro';
+import PremiumGate from '../components/ui/PremiumGate.astro';
 import { formatDate } from '../lib/utils';
 import { getActivePet } from '../lib/pet';
+import { getPremiumStatus, isAtLimit } from '../lib/premium';
 import { FOOD_TYPES } from '../lib/constants';
 
 const { supabase, user, activePetId } = Astro.locals;
@@ -12,6 +14,8 @@ const { supabase, user, activePetId } = Astro.locals;
 const { pet } = await getActivePet(supabase, user.id, activePetId);
 
 if (!pet) return Astro.redirect('/perfil?new=1');
+
+const premium = await getPremiumStatus(supabase, user.id);
 
 function bagToGrams(size: number, unit: string): number {
   if (unit === 'kg') return size * 1000;
@@ -36,6 +40,10 @@ if (Astro.request.method === 'POST') {
   };
 
   if (action === 'add') {
+    const { count: foodCount } = await supabase.from('foods').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id);
+    if (isAtLimit('maxFoods', foodCount ?? 0, premium)) {
+      return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent('Limite de alimentos alcanzado. Desbloquea Premium para ilimitados.'));
+    }
     const { error } = await supabase.from('foods').insert({ pet_id: pet.id, ...fields });
     if (error) return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent(error.message));
   }
@@ -139,22 +147,24 @@ function bagStatusText(daysRemaining: number | null, daysElapsed: number | null)
         )}
       </div>
 
-      {/* Stats row */}
+      {/* Stats row — premium analytics */}
       {(currentFood.costPerDay || avgDaysPerBag || foods.length > 1) && (
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div class="rounded-2xl bg-card border border-card-border px-4 py-3 text-center">
-            <p class="text-lg font-black text-ink">{currentFood.costPerDay ? `$${currentFood.costPerDay}` : '—'}</p>
-            <p class="text-[10px] text-muted font-medium mt-0.5">costo/día</p>
+        <PremiumGate isPremium={premium.isPremium} feature="costAnalysis" title="Analytics de comida" description="Costo por dia, promedios y mas con Premium.">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="rounded-2xl bg-card border border-card-border px-4 py-3 text-center">
+              <p class="text-lg font-black text-ink">{currentFood.costPerDay ? `$${currentFood.costPerDay}` : '—'}</p>
+              <p class="text-[10px] text-muted font-medium mt-0.5">costo/día</p>
+            </div>
+            <div class="rounded-2xl bg-card border border-card-border px-4 py-3 text-center">
+              <p class="text-lg font-black text-ink">{avgDaysPerBag ?? '—'}</p>
+              <p class="text-[10px] text-muted font-medium mt-0.5">días prom.</p>
+            </div>
+            <div class="rounded-2xl bg-card border border-card-border px-4 py-3 text-center">
+              <p class="text-lg font-black text-ink">{foods.length}</p>
+              <p class="text-[10px] text-muted font-medium mt-0.5">alimentos</p>
+            </div>
           </div>
-          <div class="rounded-2xl bg-card border border-card-border px-4 py-3 text-center">
-            <p class="text-lg font-black text-ink">{avgDaysPerBag ?? '—'}</p>
-            <p class="text-[10px] text-muted font-medium mt-0.5">días prom.</p>
-          </div>
-          <div class="rounded-2xl bg-card border border-card-border px-4 py-3 text-center">
-            <p class="text-lg font-black text-ink">{foods.length}</p>
-            <p class="text-[10px] text-muted font-medium mt-0.5">alimentos</p>
-          </div>
-        </div>
+        </PremiumGate>
       )}
     </div>
   ) : (

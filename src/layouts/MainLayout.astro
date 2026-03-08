@@ -4,6 +4,8 @@ import FormEnhancements from '../components/ui/FormEnhancements.astro';
 import Toast from '../components/ui/Toast.astro';
 import { ClientRouter } from 'astro:transitions';
 import { getActivePet } from '../lib/pet';
+import { getPremiumStatus } from '../lib/premium';
+import type { PremiumStatus } from '../lib/premium';
 import '../styles/global.css';
 
 interface Props {
@@ -32,6 +34,21 @@ if (user) {
     .eq('read', false);
   unreadCount = count ?? 0;
 }
+
+// Premium status (queried once, available to all pages via Astro.locals-like pattern)
+const premium: PremiumStatus = user
+  ? await getPremiumStatus(supabase, user.id)
+  : { isPremium: false, plan: 'free', source: null, daysLeft: 0, isTrial: false, isExpiringSoon: false };
+
+// Flight count — used by Sidebar to conditionally show Viajes nav item
+let flightCount = 0;
+if (user && activePet) {
+  const { count } = await supabase
+    .from('flights')
+    .select('id', { count: 'exact', head: true })
+    .eq('pet_id', activePet.id);
+  flightCount = count ?? 0;
+}
 ---
 
 <!doctype html>
@@ -55,7 +72,7 @@ if (user) {
     <ClientRouter />
   </head>
   <body class="min-h-screen bg-canvas" data-pet-theme={petTheme}>
-    <Sidebar activePet={activePet} pets={pets} unreadCount={unreadCount} />
+    <Sidebar activePet={activePet} pets={pets} unreadCount={unreadCount} flightCount={flightCount} />
 
     <!-- Mobile top bar spacer -->
     <div class="h-13 lg:hidden"></div>

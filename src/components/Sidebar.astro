@@ -5,18 +5,19 @@ interface Props {
   activePet: Pet | null;
   pets: Pet[];
   unreadCount?: number;
+  flightCount?: number;
 }
 
-const { activePet, pets, unreadCount = 0 } = Astro.props;
+const { activePet, pets, unreadCount = 0, flightCount = 0 } = Astro.props;
 const currentPath = Astro.url.pathname;
 
 const navItems = [
-  { href: '/dashboard',     match: '/dashboard',    label: 'Inicio',   icon: 'home' },
-  { href: '/salud',         match: '/salud',        label: 'Salud',    icon: 'heart' },
-  { href: '/alimentacion',  match: '/alimentacion', label: 'Comida',   icon: 'food' },
-  { href: '/viajes',        match: '/viajes',       label: 'Vuelos',   icon: 'plane' },
-  { href: '/calendario',   match: '/calendario',   label: 'Calendario', icon: 'calendar' },
-  { href: '/badges',        match: '/badges',       label: 'Insignias', icon: 'trophy' },
+  { href: '/dashboard',     match: '/dashboard',    label: 'Inicio',     icon: 'home' },
+  { href: '/salud',         match: '/salud',        label: 'Salud',      icon: 'heart' },
+  { href: '/alimentacion',  match: '/alimentacion', label: 'Comida',     icon: 'food' },
+  { href: '/badges',        match: '/badges',       label: 'Insignias',  icon: 'trophy' },
+  // Viajes: only show if user has at least 1 flight registered
+  ...(flightCount > 0 ? [{ href: '/viajes', match: '/viajes', label: 'Vuelos', icon: 'plane' }] : []),
 ];
 
 function isActive(match: string): boolean {
@@ -107,8 +108,8 @@ function petInitial(name: string) {
     ))}
   </nav>
 
-  <!-- Bottom: notifications + profile + faq -->
-  <div class="px-3 py-4 border-t border-white/5 space-y-0.5">
+  <!-- Notification bell -->
+  <div class="px-3 pb-1">
     <a href="/notificaciones" class:list={['sidebar-link', isActive('/notificaciones') && 'active']}>
       <div class="relative">
         <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -120,11 +121,21 @@ function petInitial(name: string) {
       </div>
       <span>Notificaciones</span>
     </a>
+  </div>
+
+  <!-- Bottom: profile + referidos + help -->
+  <div class="px-3 py-4 border-t border-white/5 space-y-0.5">
     <a href="/perfil" class:list={['sidebar-link', isActive('/perfil') && 'active']}>
       <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
       </svg>
       <span>Perfil</span>
+    </a>
+    <a href="/referidos" class:list={['sidebar-link', isActive('/referidos') && 'active']}>
+      <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <use href="#sbi-gift" />
+      </svg>
+      <span>Referidos</span>
     </a>
     <a href="/faq" class:list={['sidebar-link', isActive('/faq') && 'active']}>
       <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -132,7 +143,7 @@ function petInitial(name: string) {
       </svg>
       <span>Ayuda</span>
     </a>
-    <a href="/perfil#feedback" class="sidebar-link">
+    <a href="/perfil#feedback" class="sidebar-link go-feedback">
       <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
@@ -251,22 +262,17 @@ function petInitial(name: string) {
     </nav>
 
     <div class="px-3 py-4 border-t border-white/5 space-y-0.5">
-      <a href="/notificaciones" class:list={['sidebar-link', isActive('/notificaciones') && 'active']}>
-        <div class="relative">
-          <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-          </svg>
-          {unreadCount > 0 && (
-            <span class="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
-          )}
-        </div>
-        <span>Notificaciones</span>
-      </a>
       <a href="/perfil" class:list={['sidebar-link', isActive('/perfil') && 'active']}>
         <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
         </svg>
         <span>Perfil</span>
+      </a>
+      <a href="/referidos" class:list={['sidebar-link', isActive('/referidos') && 'active']}>
+        <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <use href="#sbi-gift" />
+        </svg>
+        <span>Referidos</span>
       </a>
       <a href="/faq" class:list={['sidebar-link', isActive('/faq') && 'active']}>
         <svg class="h-4.5 w-4.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -304,14 +310,15 @@ function petInitial(name: string) {
     <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
     <circle cx="12" cy="13" r="3"/>
   </symbol>
-  <symbol id="sbi-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-  </symbol>
   <symbol id="sbi-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
     <path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/>
     <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/>
     <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+  </symbol>
+  <symbol id="sbi-gift" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/>
+    <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>
   </symbol>
 </svg>
 

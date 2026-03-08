@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { createSupabaseClient } from '../../../lib/supabase';
+import { createSupabaseClient, createSupabaseAdminClient } from '../../../lib/supabase';
 
 export const GET: APIRoute = async ({ request, cookies, redirect }) => {
   const url = new URL(request.url);
@@ -38,6 +38,43 @@ export const GET: APIRoute = async ({ request, cookies, redirect }) => {
   // Route new users (no pet yet) to onboarding, set active_pet_id cookie for returning users
   const { data: { user } } = await supabase.auth.getUser();
   if (user) {
+    // Process pending referral code (from registration)
+    const pendingRef = cookies.get('pending_referral')?.value;
+    if (pendingRef) {
+      try {
+        const admin = createSupabaseAdminClient();
+        // Find the referral code and its owner
+        const { data: refCode } = await admin
+          .from('referral_codes')
+          .select('user_id, code')
+          .eq('code', pendingRef)
+          .maybeSingle();
+
+        if (refCode && refCode.user_id !== user.id) {
+          // Check if this user wasn't already referred
+          const { data: existingRef } = await admin
+            .from('referrals')
+            .select('id')
+            .eq('referred_id', user.id)
+            .maybeSingle();
+
+          if (!existingRef) {
+            // Create pending referral (completed after pet creation in onboarding)
+            await admin.from('referrals').insert({
+              referrer_id: refCode.user_id,
+              referred_id: user.id,
+              code: refCode.code,
+              status: 'pending',
+            });
+          }
+        }
+      } catch {
+        // Silently ignore if referral tables don't exist yet
+      }
+      // Clear the cookie
+      cookies.delete('pending_referral', { path: '/' });
+    }
+
     const { data: pets } = await supabase
       .from('pets')
       .select('id')

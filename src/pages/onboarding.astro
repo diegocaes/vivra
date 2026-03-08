@@ -2,6 +2,8 @@
 import '../styles/global.css';
 import { DOG_BREEDS, BREED_FACTS } from '../lib/breeds';
 import { uploadPetPhoto } from '../lib/storage';
+import { createSupabaseAdminClient } from '../lib/supabase';
+import { getPremiumStatus, isAtLimit } from '../lib/premium';
 
 const { supabase, user } = Astro.locals;
 
@@ -19,6 +21,14 @@ const hasPet = (existingPets?.length ?? 0) > 0;
 // If not in add mode and user already has a pet → go to dashboard
 if (!isAddMode && hasPet) {
   return Astro.redirect('/dashboard');
+}
+
+// Multi-pet limit: if in add mode, check premium limit
+if (isAddMode) {
+  const premium = await getPremiumStatus(supabase, user.id);
+  if (isAtLimit('maxPets', existingPets?.length ?? 0, premium)) {
+    return Astro.redirect('/premium');
+  }
 }
 
 // Personalized greeting
@@ -84,6 +94,128 @@ if (Astro.request.method === 'POST') {
     maxAge: 60 * 60 * 24 * 365,
     secure: import.meta.env.PROD,
   });
+
+  // ── Referral system: generate code + complete referral + grant rewards ──
+  if (!isAddMode) {
+    try {
+      const admin = createSupabaseAdminClient();
+      const petName = rawName || 'PET';
+
+      // 1. Generate this user's unique referral code (based on pet name)
+      const { data: existingCode } = await admin
+        .from('referral_codes')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!existingCode) {
+        // Generate code: PETNAME + 4 random digits
+        const base = petName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+        const digits = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+        let code = base + digits;
+
+        // Check uniqueness, retry if needed
+        const { data: codeExists } = await admin
+          .from('referral_codes')
+          .select('id')
+          .eq('code', code)
+          .maybeSingle();
+        if (codeExists) {
+          code = base + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+        }
+
+        await admin.from('referral_codes').insert({
+          user_id: user.id,
+          code,
+        });
+      }
+
+      // 2. Mark pending referral as completed and grant rewards
+      const { data: pendingRef } = await admin
+        .from('referrals')
+        .select('id, referrer_id')
+        .eq('referred_id', user.id)
+        .eq('status', 'pending')
+        .maybeSingle();
+
+      if (pendingRef) {
+        // Mark referral as completed
+        await admin.from('referrals').update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        }).eq('id', pendingRef.id);
+
+        // Grant referrer: 30 days premium
+        const { data: referrerSub } = await admin
+          .from('user_subscriptions')
+          .select('id, premium_until')
+          .eq('user_id', pendingRef.referrer_id)
+          .maybeSingle();
+
+        const now = new Date();
+        const currentEnd = referrerSub?.premium_until ? new Date(referrerSub.premium_until) : now;
+        const newEnd = new Date(Math.max(currentEnd.getTime(), now.getTime()) + 30 * 24 * 60 * 60 * 1000);
+
+        if (referrerSub) {
+          await admin.from('user_subscriptions').update({
+            plan: 'premium',
+            source: 'referral',
+            premium_until: newEnd.toISOString(),
+            updated_at: now.toISOString(),
+          }).eq('id', referrerSub.id);
+        } else {
+          await admin.from('user_subscriptions').insert({
+            user_id: pendingRef.referrer_id,
+            plan: 'premium',
+            source: 'referral',
+            premium_until: newEnd.toISOString(),
+          });
+        }
+
+        // Increment referrer's uses_count
+        const { data: refCodeRow } = await admin
+          .from('referral_codes')
+          .select('uses_count')
+          .eq('user_id', pendingRef.referrer_id)
+          .maybeSingle();
+        await admin.from('referral_codes')
+          .update({ uses_count: (refCodeRow?.uses_count ?? 0) + 1 })
+          .eq('user_id', pendingRef.referrer_id);
+
+        // Mark referral as rewarded
+        await admin.from('referrals').update({
+          status: 'rewarded',
+          reward_granted: true,
+          premium_days_granted: 30,
+        }).eq('id', pendingRef.id);
+
+        // Grant referred user: 14 days premium trial
+        const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+        await admin.from('user_subscriptions').upsert({
+          user_id: user.id,
+          plan: 'premium',
+          source: 'trial',
+          trial_ends_at: trialEnd.toISOString(),
+          premium_until: trialEnd.toISOString(),
+        }, { onConflict: 'user_id' });
+      } else {
+        // No referral — create free subscription record
+        const { data: existingSub } = await admin
+          .from('user_subscriptions')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (!existingSub) {
+          await admin.from('user_subscriptions').insert({
+            user_id: user.id,
+            plan: 'free',
+          });
+        }
+      }
+    } catch {
+      // Silently ignore if referral tables don't exist yet
+    }
+  }
 
   return Astro.redirect('/dashboard?onboarded=1');
 }

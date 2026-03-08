@@ -1,11 +1,10 @@
 ---
 import MainLayout from '../layouts/MainLayout.astro';
-import { formatDate, isBirthday, calculateAge } from '../lib/utils';
-import { getVaccineBadge } from '../lib/vaccine-badges';
+import { isBirthday, calculateAge } from '../lib/utils';
 import { getActivePet } from '../lib/pet';
 import { calculateVitalityScore } from '../lib/vitality-score';
 import type { ScoreInput } from '../lib/vitality-score';
-import { GROOMING_TYPES } from '../lib/constants';
+
 import { evaluateBadges } from '../lib/badges';
 import type { BadgeCounts } from '../lib/badges';
 import { BREED_FACTS } from '../lib/breeds';
@@ -22,7 +21,7 @@ if (!pet) {
 
 const [
   { data: allGroomings },
-  { data: flightRows },
+  _unusedFlights,
   { data: allVaccines },
   { data: allVetVisits },
   { data: weightRecords },
@@ -50,12 +49,7 @@ const [
 const vaccineCount = allVaccines?.length ?? 0;
 const visitCount = allVetVisits?.length ?? 0;
 const groomingCount = allGroomings?.length ?? 0;
-const lastGrooming = allGroomings?.[0] ?? null;
-const lastVetVisit = allVetVisits?.[0] ?? null;
-const recentVaccines = allVaccines?.slice(0, 4) ?? [];
 const allVaccineNames = allVaccines ?? [];
-
-const lastFlight = flightRows?.[0] ?? null;
 
 // Food insights
 function bagToGrams(size: number, unit: string): number {
@@ -80,14 +74,6 @@ const daysLeft = totalDays !== null && daysElapsed !== null
   ? Math.max(0, totalDays - daysElapsed)
   : null;
 
-
-const foodsWithCost = activeFoods.filter(f => f.price);
-const avgCostPerDay = foodsWithCost.length
-  ? (foodsWithCost.reduce((sum, f) => {
-      const days = bagToGrams(f.bag_size, f.bag_unit ?? 'kg') / f.daily_grams;
-      return sum + f.price / days;
-    }, 0) / foodsWithCost.length).toFixed(2)
-  : null;
 
 // Vitality Score — same full data as /salud for consistent results
 const vitalityInput: ScoreInput = {
@@ -116,14 +102,6 @@ const SHORT_PILLAR: Record<string, string> = {
   'Nutrición': 'Nutrición',
 };
 
-const PILLAR_TOOLTIP: Record<string, string> = {
-  'Peso': 'Peso corporal vs. rango ideal de la raza',
-  'Cuidado preventivo': 'Vacunas al día y visitas al veterinario',
-  'Raza y edad': 'Factores genéticos y etapa de vida',
-  'Actividad': 'Paseos diarios y cuidado estético',
-  'Nutrición': 'Calidad del alimento y porción diaria',
-};
-
 // Preventive treatment reminders (30-day cycle)
 function daysUntilNext(lastDateStr: string | null | undefined): { daysLeft: number; overdue: boolean; lastDate: string | null } {
   if (!lastDateStr) return { daysLeft: 0, overdue: true, lastDate: null };
@@ -137,17 +115,16 @@ function daysUntilNext(lastDateStr: string | null | undefined): { daysLeft: numb
   return { daysLeft, overdue: daysLeft < 0, lastDate: lastDateStr };
 }
 
-const lastVet = lastVetVisit;
-const daysSinceVet = lastVet?.date
-  ? Math.floor((Date.now() - new Date(lastVet.date).getTime()) / (1000 * 60 * 60 * 24))
-  : null;
-
 const antipulgasInfo = daysUntilNext(lastAntipulgas?.[0]?.date_given);
 const desparasitanteInfo = daysUntilNext(lastDesparasitante?.[0]?.date_given);
 
 const birthday = pet.birth_date ? isBirthday(pet.birth_date) : false;
 const age = pet.birth_date ? calculateAge(pet.birth_date) : null;
 const photoUrl = pet.photo_url || '/icons/default-pet.svg';
+
+// "Qué hacer hoy" — priority actions
+type DashAction = { href: string; icon: string; iconBg: string; iconColor: string; label: string; detail: string; urgent: boolean };
+const todoActions: DashAction[] = [];
 
 // Breed fact — rotates daily based on day-of-year, fallback to generic facts
 const breedFacts = pet.breed ? BREED_FACTS[pet.breed as DogBreed] : BREED_FACTS['Other'];
@@ -190,83 +167,76 @@ const checklistItems = [
   { done: profileComplete,            href: '/perfil',              label: 'Completar perfil',          sub: 'Foto, microchip, color de pelaje',               iconColor: 'bg-amber/10',  iconStroke: 'text-amber-dark',icon: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>' },
 ].filter(item => !item.done);
 
-// ── Notification generation (compare current state vs snapshot cookie) ──
+// ── Notification generation (deduplicated against DB) ──
 try {
+  // Fetch existing notification messages for this pet to avoid duplicates
+  const { data: existingNotifs } = await supabase
+    .from('notifications')
+    .select('type, message')
+    .eq('user_id', user.id)
+    .eq('pet_id', pet.id);
+  const existingSet = new Set((existingNotifs ?? []).map(n => `${n.type}::${n.message}`));
+
   const rawSnapshot = Astro.cookies.get('pet_snapshot')?.value;
   const snapshot = rawSnapshot ? JSON.parse(rawSnapshot) as { badgeCount?: number; score?: number; petId?: string; foodNotified?: boolean; antipulgasNotified?: boolean; desparasitanteNotified?: boolean } : null;
   const isSamePet = snapshot?.petId === pet.id;
-  const prevBadgeCount = (isSamePet ? snapshot?.badgeCount : null) ?? 0;
   const prevScore = (isSamePet ? snapshot?.score : null) ?? 0;
 
   const newNotifications: Array<{ type: string; title: string; message: string; icon: string; href: string }> = [];
 
-  // New badges earned since last visit
-  if (badgeResult.earnedCount > prevBadgeCount) {
-    const newCount = badgeResult.earnedCount - prevBadgeCount;
-    // Get the names of recently earned badges (best effort — take last N earned)
-    const recentlyEarned = earnedBadges.slice(0, newCount);
-    for (const badge of recentlyEarned) {
-      newNotifications.push({
-        type: 'badge_earned',
-        title: '¡Nueva insignia!',
-        message: `Ganaste "${badge.name}"`,
-        icon: '🏆',
-        href: '/badges',
-      });
+  // New badges earned — only notify if not already in DB
+  for (const badge of earnedBadges) {
+    const msg = `Ganaste "${badge.name}"`;
+    const key = `badge_earned::${msg}`;
+    if (!existingSet.has(key)) {
+      newNotifications.push({ type: 'badge_earned', title: '¡Nueva insignia!', message: msg, icon: '🏆', href: '/badges' });
+      existingSet.add(key);
     }
   }
 
-  // Score improved by 5+ points
-  if (dashScore.showScore && dashScore.total >= prevScore + 5 && prevScore > 0) {
-    newNotifications.push({
-      type: 'score_improved',
-      title: '¡Score mejoró!',
-      message: `El bienestar de ${pet.name} subió a ${dashScore.total}/100`,
-      icon: '📈',
-      href: '/salud',
-    });
+  // Score improved by 5+ points (only if we had a previous score to compare)
+  if (dashScore.showScore && prevScore > 0 && dashScore.total >= prevScore + 5) {
+    const msg = `El bienestar de ${pet.name} subió a ${dashScore.total}/100`;
+    const key = `score_improved::${msg}`;
+    if (!existingSet.has(key)) {
+      newNotifications.push({ type: 'score_improved', title: '¡Score mejoró!', message: msg, icon: '📈', href: '/salud' });
+    }
   }
 
   // Food running out (≤5 days left, notify once per cycle)
   if (daysLeft !== null && daysLeft <= 5 && !(isSamePet && snapshot?.foodNotified)) {
-    newNotifications.push({
-      type: 'food_low',
-      title: '🍖 Comida por acabarse',
-      message: daysLeft === 0
-        ? `La bolsa de ${currentFood?.brand || 'alimento'} ya debería haberse acabado`
-        : `Quedan ~${daysLeft} día${daysLeft !== 1 ? 's' : ''} de ${currentFood?.brand || 'alimento'}`,
-      icon: '🍖',
-      href: '/alimentacion',
-    });
+    const msg = daysLeft === 0
+      ? `La bolsa de ${currentFood?.brand || 'alimento'} ya debería haberse acabado`
+      : `Quedan ~${daysLeft} día${daysLeft !== 1 ? 's' : ''} de ${currentFood?.brand || 'alimento'}`;
+    const key = `food_low::${msg}`;
+    if (!existingSet.has(key)) {
+      newNotifications.push({ type: 'food_low', title: '🍖 Comida por acabarse', message: msg, icon: '🍖', href: '/alimentacion' });
+    }
   }
 
   // Antipulgas due (≤3 days left or overdue, notify once per cycle)
   if (antipulgasInfo.lastDate && antipulgasInfo.daysLeft <= 3 && !(isSamePet && snapshot?.antipulgasNotified)) {
-    newNotifications.push({
-      type: 'preventive_due',
-      title: antipulgasInfo.overdue ? '⚠️ Antipulgas vencido' : '🐛 Antipulgas próximo',
-      message: antipulgasInfo.overdue
-        ? `El antipulgas de ${pet.name} ya venció. Aplícalo cuanto antes.`
-        : `Faltan ${antipulgasInfo.daysLeft} día${antipulgasInfo.daysLeft !== 1 ? 's' : ''} para el antipulgas de ${pet.name}`,
-      icon: '🐛',
-      href: '/dashboard',
-    });
+    const msg = antipulgasInfo.overdue
+      ? `El antipulgas de ${pet.name} ya venció. Aplícalo cuanto antes.`
+      : `Faltan ${antipulgasInfo.daysLeft} día${antipulgasInfo.daysLeft !== 1 ? 's' : ''} para el antipulgas de ${pet.name}`;
+    const key = `preventive_due::${msg}`;
+    if (!existingSet.has(key)) {
+      newNotifications.push({ type: 'preventive_due', title: antipulgasInfo.overdue ? '⚠️ Antipulgas vencido' : '🐛 Antipulgas próximo', message: msg, icon: '🐛', href: '/dashboard' });
+    }
   }
 
   // Desparasitante due (≤3 days left or overdue, notify once per cycle)
   if (desparasitanteInfo.lastDate && desparasitanteInfo.daysLeft <= 3 && !(isSamePet && snapshot?.desparasitanteNotified)) {
-    newNotifications.push({
-      type: 'preventive_due',
-      title: desparasitanteInfo.overdue ? '⚠️ Desparasitante vencido' : '💊 Desparasitante próximo',
-      message: desparasitanteInfo.overdue
-        ? `El desparasitante de ${pet.name} ya venció. Aplícalo cuanto antes.`
-        : `Faltan ${desparasitanteInfo.daysLeft} día${desparasitanteInfo.daysLeft !== 1 ? 's' : ''} para el desparasitante de ${pet.name}`,
-      icon: '💊',
-      href: '/dashboard',
-    });
+    const msg = desparasitanteInfo.overdue
+      ? `El desparasitante de ${pet.name} ya venció. Aplícalo cuanto antes.`
+      : `Faltan ${desparasitanteInfo.daysLeft} día${desparasitanteInfo.daysLeft !== 1 ? 's' : ''} para el desparasitante de ${pet.name}`;
+    const key = `preventive_due::${msg}`;
+    if (!existingSet.has(key)) {
+      newNotifications.push({ type: 'preventive_due', title: desparasitanteInfo.overdue ? '⚠️ Desparasitante vencido' : '💊 Desparasitante próximo', message: msg, icon: '💊', href: '/dashboard' });
+    }
   }
 
-  // Insert all new notifications
+  // Insert only truly new notifications
   if (newNotifications.length > 0) {
     await supabase.from('notifications').insert(
       newNotifications.map(n => ({ ...n, user_id: user.id, pet_id: pet.id }))
@@ -285,11 +255,83 @@ try {
 } catch (_) {
   // Silently ignore if notifications table doesn't exist yet
 }
+
+// Build "Qué hacer hoy" actions
+if (antipulgasInfo.lastDate && (antipulgasInfo.overdue || antipulgasInfo.daysLeft <= 3)) {
+  todoActions.push({
+    href: '/salud/preventivos',
+    icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    iconBg: antipulgasInfo.overdue ? 'bg-red-50' : 'bg-amber/10',
+    iconColor: antipulgasInfo.overdue ? 'text-red-500' : 'text-amber-600',
+    label: antipulgasInfo.overdue ? 'Antipulgas vencido' : `Antipulgas en ${antipulgasInfo.daysLeft}d`,
+    detail: 'Aplicar tratamiento',
+    urgent: antipulgasInfo.overdue,
+  });
+} else if (!antipulgasInfo.lastDate) {
+  todoActions.push({
+    href: '/salud/preventivos',
+    icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    iconBg: 'bg-accent-light', iconColor: 'text-accent',
+    label: 'Registrar antipulgas', detail: 'Primera aplicacion', urgent: false,
+  });
+}
+
+if (desparasitanteInfo.lastDate && (desparasitanteInfo.overdue || desparasitanteInfo.daysLeft <= 3)) {
+  todoActions.push({
+    href: '/salud/preventivos',
+    icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    iconBg: desparasitanteInfo.overdue ? 'bg-red-50' : 'bg-amber/10',
+    iconColor: desparasitanteInfo.overdue ? 'text-red-500' : 'text-amber-600',
+    label: desparasitanteInfo.overdue ? 'Desparasitante vencido' : `Desparasitante en ${desparasitanteInfo.daysLeft}d`,
+    detail: 'Aplicar tratamiento',
+    urgent: desparasitanteInfo.overdue,
+  });
+} else if (!desparasitanteInfo.lastDate) {
+  todoActions.push({
+    href: '/salud/preventivos',
+    icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    iconBg: 'bg-accent-light', iconColor: 'text-accent',
+    label: 'Registrar desparasitante', detail: 'Primera aplicacion', urgent: false,
+  });
+}
+
+if (daysLeft !== null && daysLeft <= 5) {
+  todoActions.push({
+    href: '/alimentacion',
+    icon: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3v7"/>',
+    iconBg: daysLeft <= 2 ? 'bg-red-50' : 'bg-amber/10',
+    iconColor: daysLeft <= 2 ? 'text-red-500' : 'text-amber-600',
+    label: daysLeft === 0 ? 'Comida agotada' : `${daysLeft}d de comida restante`,
+    detail: currentFood?.brand || 'Comprar alimento',
+    urgent: daysLeft <= 2,
+  });
+}
+
+if (!latestWeight) {
+  todoActions.push({
+    href: '/salud/peso?new=1',
+    icon: '<circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 0 1 8 0"/><line x1="12" y1="12" x2="12" y2="8"/>',
+    iconBg: 'bg-sky-50', iconColor: 'text-sky-500',
+    label: 'Registrar peso', detail: 'Primer registro', urgent: false,
+  });
+}
+
+if (vaccineCount === 0) {
+  todoActions.push({
+    href: '/salud/vacunas?new=1',
+    icon: '<path d="m14.5 2-8.5 8.5v4h4l8.5-8.5a2.83 2.83 0 0 0-4-4z"/><path d="m18 2 4 4"/>',
+    iconBg: 'bg-accent/10', iconColor: 'text-accent',
+    label: 'Agregar vacuna', detail: 'Rabia, Parvovirus, etc.', urgent: false,
+  });
+}
+
+todoActions.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+const topActions = todoActions.slice(0, 4);
 ---
 
 <MainLayout title="Inicio">
 
-  {/* ── QUICK START CHECKLIST ── */}
+  {/* ── QUICK START CHECKLIST (new users) ── */}
   {checklistItems.length > 0 && (
     <div class="mb-5 animate-fade-up" id="onboarding-checklist">
       <div class="rounded-t-2xl border border-b-0 border-accent/30 bg-accent/10 px-5 py-4">
@@ -297,7 +339,7 @@ try {
           <span class="text-xl">🚀</span>
           <div>
             <p class="text-sm font-bold text-accent-dark">Primeros pasos con {pet.name}</p>
-            <p class="text-xs text-muted mt-0.5">{checklistItems.length} {checklistItems.length === 1 ? 'paso pendiente' : 'pasos pendientes'} para sacarle el máximo a PetLog.</p>
+            <p class="text-xs text-muted mt-0.5">{checklistItems.length} {checklistItems.length === 1 ? 'paso pendiente' : 'pasos pendientes'}</p>
           </div>
         </div>
       </div>
@@ -376,274 +418,151 @@ try {
     </div>
   )}
 
-  {/* ── HERO CARD ── */}
-  <a href="/perfil" class="block mb-6 animate-fade-up">
+  {/* ── HERO: Pet + Score ── */}
+  <div class="mb-6 animate-fade-up">
     <div class="relative rounded-3xl overflow-hidden" style="background-color: var(--color-accent);">
       <div class="absolute inset-0 bg-linear-to-br from-white/5 to-transparent pointer-events-none"></div>
       <div class="relative flex items-center gap-4 p-5">
-        <div class="relative shrink-0 h-20 w-20">
+        <a href="/perfil" class="relative shrink-0 h-16 w-16">
           <img
             src={photoUrl}
             alt={pet.name}
             class:list={[
-              'h-20 w-20 rounded-2xl object-cover',
+              'h-16 w-16 rounded-2xl object-cover',
               birthday ? 'ring-2 ring-amber ring-offset-1 ring-offset-transparent' : 'ring-1 ring-white/10',
             ]}
           />
           {birthday && <span class="absolute -top-1 -right-1 text-base animate-bounce">🎂</span>}
-        </div>
+        </a>
         <div class="flex-1 min-w-0">
-          <p class="text-xs font-medium text-white/40 uppercase tracking-widest mb-0.5">Mi mascota</p>
-          <h1 class="text-2xl font-bold text-white tracking-tight truncate">{pet.name}</h1>
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-            {pet.breed && <span class="text-sm text-white/60">{pet.breed}</span>}
-            {age && pet.breed && <span class="text-white/30 text-sm">·</span>}
-            {age && <span class="text-sm text-white/60">{age}</span>}
-            {pet.gender && (
-              <Fragment>
-                <span class="text-white/30 text-sm">·</span>
-                <span class="text-sm text-white/60">{pet.gender === 'macho' ? 'Macho ♂' : 'Hembra ♀'}</span>
-              </Fragment>
-            )}
+          <h1 class="text-xl font-bold text-white tracking-tight truncate">{pet.name}</h1>
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+            {pet.breed && <span class="text-xs text-white/60">{pet.breed}</span>}
+            {age && <Fragment><span class="text-white/30 text-xs">·</span><span class="text-xs text-white/60">{age}</span></Fragment>}
           </div>
         </div>
-        <div class="shrink-0 text-white/20">
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m9 18 6-6-6-6"/>
-          </svg>
-        </div>
+        {/* Inline Score circle */}
+        <a href="/salud" class="shrink-0">
+          {dashScore.showScore ? (
+            <div class="relative h-14 w-14" aria-label={`Score: ${dashScore.total}`}>
+              <svg viewBox="0 0 36 36" class="h-14 w-14 -rotate-90" aria-hidden="true">
+                <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="3"/>
+                <circle
+                  cx="18" cy="18" r="15.5"
+                  fill="none"
+                  stroke="white"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-dasharray={`${(dashScore.total / 100) * 97.4} 97.4`}
+                />
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-lg font-black text-white leading-none">{dashScore.total}</span>
+                <span class="text-[7px] font-semibold text-white/60 uppercase tracking-widest">Score</span>
+              </div>
+            </div>
+          ) : (
+            <div class="h-14 w-14 rounded-full flex items-center justify-center border-2 border-dashed border-white/20">
+              <span class="text-lg">🐾</span>
+            </div>
+          )}
+        </a>
       </div>
-      {(pet.weight_kg || pet.chip_id) && (
-        <div class="relative flex gap-2 px-5 pb-4">
-          {pet.weight_kg && (
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-white/8 px-3 py-1 text-xs font-medium text-white/70">
-              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 0 1 8 0"/><line x1="12" y1="12" x2="12" y2="8"/></svg>
-              {pet.weight_kg} kg
-            </span>
-          )}
-          {pet.chip_id && (
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-white/8 px-3 py-1 text-xs font-medium text-white/70">
-              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M7 12H3M17 12h4M12 7V3M12 17v4"/></svg>
-              Chip
-            </span>
-          )}
-        </div>
-      )}
+      {/* Score headline */}
+      <div class="relative px-5 pb-4 flex items-center justify-between">
+        <p class="text-xs font-medium text-white/60">{dashScore.headline}</p>
+        {latestWeight && (
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70">
+            {latestWeight} kg
+            {weightDiff !== null && (
+              <span class={weightDiff > 0 ? 'text-amber-200' : 'text-green-200'}>
+                {weightDiff > 0 ? '+' : ''}{weightDiff}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
     </div>
-  </a>
+  </div>
 
-  {/* ── BREED FACT OF THE DAY ── */}
-  {dailyFact && (
-    <div class="mb-5 animate-fade-up">
-      <div class="flex items-start gap-3 rounded-2xl border border-accent/15 bg-accent/5 px-4 py-3">
-        <span class="text-lg shrink-0 mt-0.5">{dailyFact.emoji}</span>
-        <div>
-          <p class="text-xs font-bold text-accent-dark mb-0.5">¿Sabías que...?</p>
-          <p class="text-xs text-ink/70 leading-relaxed">{dailyFact.fact}</p>
-        </div>
+  {/* ── QUE HACER HOY ── */}
+  {topActions.length > 0 && (
+    <div class="mb-6 animate-fade-up animate-fade-up-delay-1">
+      <p class="text-xs font-semibold text-muted uppercase tracking-widest mb-3">Que hacer hoy</p>
+      <div class="rounded-2xl bg-card border border-card-border overflow-hidden divide-y divide-card-border">
+        {topActions.map(action => (
+          <a href={action.href} class="flex items-center gap-3 px-4 py-3.5 hover:bg-canvas transition-colors active:scale-95">
+            <div class:list={['flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', action.iconBg]}>
+              <svg class:list={['h-4 w-4', action.iconColor]} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" set:html={action.icon} />
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class:list={['text-sm font-semibold truncate', action.urgent ? 'text-red-600' : 'text-ink']}>{action.label}</p>
+              <p class="text-[11px] text-muted truncate">{action.detail}</p>
+            </div>
+            <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+          </a>
+        ))}
       </div>
     </div>
   )}
 
-  {/* ── MIDDLE ROW: Score + Peso/Alimentación ── */}
-  <div class="grid grid-cols-5 gap-3 mb-6 animate-fade-up animate-fade-up-delay-1">
-
-    {/* Score de Bienestar — dark card (3/5) */}
-    <div class="col-span-5 sm:col-span-3 self-stretch">
-      <a href="/salud" class="block h-full">
-        <div class="h-full rounded-2xl border border-card-border bg-card p-4 flex flex-col gap-3">
-
-          {/* Icon + title */}
-          <div class="flex items-start gap-3">
-            <div class="shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="var(--color-accent)" stroke="none">
-                <path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/>
-              </svg>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-bold text-ink">Score de Bienestar</p>
-              <p class="text-[11px] text-muted leading-relaxed mt-0.5">
-                Salud de {pet.name} en 5 pilares.
-              </p>
-            </div>
-          </div>
-
-          {/* Circle + bars */}
-          <div class="flex items-start gap-4">
-
-            {/* Score circle */}
-            {dashScore.showScore ? (
-              <div class="relative shrink-0 h-16 w-16" aria-label={`Score: ${dashScore.total}`}>
-                <svg viewBox="0 0 36 36" class="h-16 w-16 -rotate-90" aria-hidden="true">
-                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="#EAECF0" stroke-width="3"/>
-                  <circle
-                    cx="18" cy="18" r="15.5"
-                    fill="none"
-                    stroke={dashScore.color}
-                    stroke-width="3"
-                    stroke-linecap="round"
-                    stroke-dasharray={`${(dashScore.total / 100) * 97.4} 97.4`}
-                  />
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <span class="text-xl font-black text-ink leading-none">{dashScore.total}</span>
-                  <span class="text-[8px] font-semibold text-muted uppercase tracking-widest">Score</span>
-                </div>
-              </div>
-            ) : (
-              <div class="shrink-0 h-16 w-16 rounded-full flex items-center justify-center border-2 border-dashed border-card-border">
-                <span class="text-xl">🐾</span>
-              </div>
-            )}
-
-            {/* 5 pillar bars */}
-            <div class="flex-1 flex flex-col justify-center gap-2">
-              {dashScore.pillars.map(pillar => (
-                <div class="group/pill relative flex items-center gap-2">
-                  <p class="text-[10px] shrink-0 w-14 truncate text-muted">
-                    {SHORT_PILLAR[pillar.name] ?? pillar.name}
-                  </p>
-                  <div class="flex-1 rounded-full h-1.5 overflow-hidden bg-canvas">
-                    <div
-                      class="h-1.5 rounded-full"
-                      style={`width: ${dashScore.showScore ? pillar.pct : 0}%; background-color: var(--color-accent); transition: width 0.6s ease;`}
-                    />
-                  </div>
-                  <p class={`text-[10px] w-4 text-right font-semibold shrink-0 ${dashScore.showScore ? 'text-ink' : 'text-muted/30'}`}>
-                    {pillar.score}
-                  </p>
-                  <span class="pointer-events-none absolute left-14 -top-7 z-10 hidden group-hover/pill:block rounded-lg bg-sidebar px-2.5 py-1 text-[10px] text-white whitespace-nowrap shadow-lg">
-                    {PILLAR_TOOLTIP[pillar.name] ?? pillar.name}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-          </div>
-
-          {/* Footer status */}
-          <p class="text-[11px] font-medium mt-auto" style={`color: ${dashScore.color};`}>
-            {dashScore.headline} →
-          </p>
-
-        </div>
-      </a>
-    </div>
-
-    {/* Right column: Peso + Alimentación (2/5) */}
-    <div class="col-span-5 sm:col-span-2 flex flex-col gap-3">
-
-      {/* Peso compact */}
-      <a href="/salud/peso" class="block rounded-2xl border border-card-border bg-card overflow-hidden active:scale-95 transition-transform hover:shadow-sm">
-        <div class="px-4 py-4">
-          <p class="text-[10px] font-semibold text-muted uppercase tracking-widest mb-1">Peso actual</p>
-          {latestWeight ? (
-            <div class="flex items-baseline gap-1.5">
-              <span class="text-3xl font-black text-ink leading-none">{latestWeight}</span>
-              <span class="text-sm text-muted">kg</span>
-            </div>
-          ) : (
-            <p class="text-sm font-semibold text-muted">Sin registrar</p>
-          )}
-          {weightDiff !== null && (
-            <p class={`text-xs mt-1 ${weightDiff > 0 ? 'text-amber-600' : 'text-accent'}`}>
-              {weightDiff > 0 ? '↑' : '↓'} {Math.abs(weightDiff)} kg
-            </p>
-          )}
-        </div>
-      </a>
-
-      {/* Veterinario compact */}
-      <a href="/salud/historial" class="flex-1 block rounded-2xl bg-card border border-card-border px-4 py-4 active:scale-95 transition-transform hover:border-blue-200">
-        <div class="flex items-center gap-2 mb-2">
-          <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-            <svg class="h-3.5 w-3.5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/></svg>
-          </div>
-          <p class="text-xs font-semibold text-ink">Veterinario</p>
-        </div>
-        {lastVet ? (
-          <>
-            <p class="text-sm font-bold text-ink truncate">{lastVet.reason || 'Visita'}</p>
-            <p class="text-xs text-muted mt-0.5">
-              {daysSinceVet !== null ? (
-                daysSinceVet === 0 ? 'Hoy' : `Hace ${daysSinceVet}d`
-              ) : ''}
-            </p>
-          </>
-        ) : (
-          <p class="text-xs text-muted/60">Registrar visita →</p>
-        )}
-      </a>
-
-    </div>
-  </div>
-
-  {/* ── BOTTOM ROW: Vacunas + Alimentación detalle ── */}
-  <div class="grid grid-cols-2 gap-3 mb-6 animate-fade-up animate-fade-up-delay-2">
-
-    {/* Vacunas list */}
-    <a href="/salud/vacunas" class="rounded-2xl bg-card border border-card-border p-4 transition-all active:scale-95 hover:shadow-sm">
+  {/* ── SCORE BREAKDOWN (pillar bars) ── */}
+  <a href="/salud" class="block mb-6 animate-fade-up animate-fade-up-delay-1">
+    <div class="rounded-2xl border border-card-border bg-card p-4 transition-all hover:shadow-sm active:scale-95">
       <div class="flex items-center justify-between mb-3">
-        <p class="text-xs font-semibold text-ink">Vacunas</p>
+        <p class="text-xs font-semibold text-ink">Score de Bienestar</p>
         <svg class="h-4 w-4 text-muted/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
       </div>
-      {recentVaccines && recentVaccines.length > 0 ? (
-        <div class="space-y-2.5">
-          {recentVaccines.map(v => {
-            const { src, label } = getVaccineBadge(v.name);
-            return (
-              <div class="flex items-center gap-2">
-                {src ? (
-                  <img src={src} alt={label} class="h-7 w-7 object-contain shrink-0 drop-shadow-sm" />
-                ) : (
-                  <div class="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg bg-accent/10">
-                    <svg class="h-3.5 w-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2-8.5 8.5v4h4l8.5-8.5a2.83 2.83 0 0 0-4-4z"/><path d="m18 2 4 4"/></svg>
-                  </div>
-                )}
-                <div class="flex-1 min-w-0">
-                  <p class="text-[11px] font-semibold text-ink truncate">{label}</p>
-                  {v.date_given && (
-                    <p class="text-[10px] text-muted">{formatDate(v.date_given)}</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      <div class="flex flex-col gap-2">
+        {dashScore.pillars.map(pillar => (
+          <div class="flex items-center gap-2">
+            <p class="text-[10px] shrink-0 w-14 truncate text-muted">
+              {SHORT_PILLAR[pillar.name] ?? pillar.name}
+            </p>
+            <div class="flex-1 rounded-full h-1.5 overflow-hidden bg-canvas">
+              <div
+                class="h-1.5 rounded-full"
+                style={`width: ${dashScore.showScore ? pillar.pct : 0}%; background-color: var(--color-accent); transition: width 0.6s ease;`}
+              />
+            </div>
+            <p class={`text-[10px] w-4 text-right font-semibold shrink-0 ${dashScore.showScore ? 'text-ink' : 'text-muted/30'}`}>
+              {pillar.score}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p class="text-[11px] font-medium mt-3" style={`color: ${dashScore.color};`}>
+        {dashScore.headline} →
+      </p>
+    </div>
+  </a>
+
+  {/* ── RESUMEN RAPIDO: Peso + Comida ── */}
+  <div class="grid grid-cols-2 gap-3 mb-6 animate-fade-up animate-fade-up-delay-2">
+    <a href="/salud/peso" class="rounded-2xl border border-card-border bg-card px-4 py-4 active:scale-95 transition-transform hover:shadow-sm">
+      <p class="text-[10px] font-semibold text-muted uppercase tracking-widest mb-1">Peso</p>
+      {latestWeight ? (
+        <div class="flex items-baseline gap-1.5">
+          <span class="text-2xl font-black text-ink leading-none">{latestWeight}</span>
+          <span class="text-xs text-muted">kg</span>
         </div>
       ) : (
-        <div class="flex flex-col items-center justify-center py-3 text-center">
-          <span class="text-2xl mb-1">💉</span>
-          <p class="text-xs text-muted">Sin vacunas</p>
-        </div>
+        <p class="text-sm font-semibold text-muted">—</p>
+      )}
+      {weightDiff !== null && (
+        <p class={`text-xs mt-1 ${weightDiff > 0 ? 'text-amber-600' : 'text-accent'}`}>
+          {weightDiff > 0 ? '+' : ''}{weightDiff} kg
+        </p>
       )}
     </a>
-
-    {/* Alimentación detalle */}
-    <a href="/alimentacion" class="rounded-2xl bg-card border border-card-border p-4 transition-all active:scale-95 hover:shadow-sm hover:border-amber/30">
-      <div class="flex items-center justify-between mb-3">
-        <p class="text-xs font-semibold text-ink">Alimentación</p>
-        <svg class="h-4 w-4 text-muted/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-      </div>
+    <a href="/alimentacion" class="rounded-2xl border border-card-border bg-card px-4 py-4 active:scale-95 transition-transform hover:shadow-sm">
+      <p class="text-[10px] font-semibold text-muted uppercase tracking-widest mb-1">Comida</p>
       {currentFood ? (
         <>
-          <div class="flex items-center gap-2 mb-3">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber/10">
-              <svg class="h-4 w-4 text-amber-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
-            </div>
-            <p class="text-sm font-bold text-ink truncate">{currentFood.brand}</p>
-          </div>
-          {avgCostPerDay && (
-            <div class="flex items-baseline gap-1">
-              <p class="text-xl font-black text-ink">${avgCostPerDay}</p>
-              <p class="text-[11px] text-muted">/día</p>
-            </div>
-          )}
+          <p class="text-sm font-bold text-ink truncate">{currentFood.brand}</p>
           {daysLeft !== null && totalDays !== null && (
-            <div class="mt-2">
-              <div class="flex items-center justify-between mb-1">
-                <p class="text-[11px] text-muted">{daysLeft}d restantes de {totalDays}d</p>
-                <p class="text-[11px] font-semibold text-ink">{Math.round((daysLeft / totalDays) * 100)}%</p>
-              </div>
+            <div class="mt-1.5">
+              <p class="text-[11px] text-muted mb-1">{daysLeft}d restantes</p>
               <div class="h-1.5 rounded-full bg-card-border overflow-hidden">
                 <div
                   class="h-1.5 rounded-full transition-all"
@@ -654,106 +573,13 @@ try {
           )}
         </>
       ) : (
-        <div class="flex flex-col items-center justify-center py-3 text-center">
-          <span class="text-2xl mb-1">🍖</span>
-          <p class="text-xs text-muted">Agregar alimento</p>
-        </div>
+        <p class="text-sm text-muted">—</p>
       )}
     </a>
-
   </div>
 
-  {/* ── REMINDERS: Antipulgas + Desparasitante ── */}
-  <a href="/salud/preventivos" class="block mb-6 animate-fade-up animate-fade-up-delay-2">
-    <div class="rounded-2xl bg-card border border-card-border overflow-hidden transition-all duration-200 hover:shadow-sm active:scale-95">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-card-border">
-        <p class="text-xs font-semibold text-muted uppercase tracking-widest">Recordatorios</p>
-        <svg class="h-4 w-4 text-muted/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-      </div>
-      <div class="divide-y divide-card-border">
-
-        <div class="flex items-center gap-3 px-4 py-3">
-          <div class:list={[
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base',
-            !antipulgasInfo.lastDate ? 'bg-accent-light' : antipulgasInfo.overdue ? 'bg-red-50' : antipulgasInfo.daysLeft <= 5 ? 'bg-amber/10' : 'bg-green-50'
-          ]}>🐛</div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-ink">Antipulgas</p>
-            {lastAntipulgas?.[0]?.product_name && (
-              <p class="text-[11px] text-muted truncate">{lastAntipulgas[0].product_name}</p>
-            )}
-          </div>
-          <div class="text-right shrink-0">
-            {!antipulgasInfo.lastDate ? (
-              <>
-                <p class="text-xs font-semibold text-accent">Registrar</p>
-                <p class="text-[10px] text-muted">primera vez</p>
-              </>
-            ) : antipulgasInfo.overdue ? (
-              <>
-                <p class="text-xs font-semibold text-red-500">Vencido</p>
-                <p class="text-[10px] text-muted">próximo</p>
-              </>
-            ) : antipulgasInfo.daysLeft === 0 ? (
-              <>
-                <p class="text-xs font-semibold text-amber-600">¡Hoy!</p>
-                <p class="text-[10px] text-muted">próximo</p>
-              </>
-            ) : (
-              <>
-                <p class:list={['text-xs font-semibold', antipulgasInfo.daysLeft <= 5 ? 'text-amber-600' : 'text-accent-dark']}>
-                  {antipulgasInfo.daysLeft}d
-                </p>
-                <p class="text-[10px] text-muted">próximo</p>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3 px-4 py-3">
-          <div class:list={[
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base',
-            !desparasitanteInfo.lastDate ? 'bg-accent-light' : desparasitanteInfo.overdue ? 'bg-red-50' : desparasitanteInfo.daysLeft <= 5 ? 'bg-amber/10' : 'bg-green-50'
-          ]}>💊</div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-ink">Desparasitante</p>
-            {lastDesparasitante?.[0]?.product_name && (
-              <p class="text-[11px] text-muted truncate">{lastDesparasitante[0].product_name}</p>
-            )}
-          </div>
-          <div class="text-right shrink-0">
-            {!desparasitanteInfo.lastDate ? (
-              <>
-                <p class="text-xs font-semibold text-accent">Registrar</p>
-                <p class="text-[10px] text-muted">primera vez</p>
-              </>
-            ) : desparasitanteInfo.overdue ? (
-              <>
-                <p class="text-xs font-semibold text-red-500">Vencido</p>
-                <p class="text-[10px] text-muted">próximo</p>
-              </>
-            ) : desparasitanteInfo.daysLeft === 0 ? (
-              <>
-                <p class="text-xs font-semibold text-amber-600">¡Hoy!</p>
-                <p class="text-[10px] text-muted">próximo</p>
-              </>
-            ) : (
-              <>
-                <p class:list={['text-xs font-semibold', desparasitanteInfo.daysLeft <= 5 ? 'text-amber-600' : 'text-accent-dark']}>
-                  {desparasitanteInfo.daysLeft}d
-                </p>
-                <p class="text-[10px] text-muted">próximo</p>
-              </>
-            )}
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </a>
-
-  {/* ── BADGES SHOWCASE ── */}
-  <a href="/badges" class="block mb-6 animate-fade-up animate-fade-up-delay-3">
+  {/* ── BADGES COMPACT ── */}
+  <a href="/badges" class="block mb-6 animate-fade-up animate-fade-up-delay-2">
     <div class="rounded-2xl bg-card border border-card-border p-4 transition-all hover:shadow-sm active:scale-95">
       <div class="flex items-center justify-between mb-2.5">
         <div class="flex items-center gap-1.5">
@@ -767,32 +593,21 @@ try {
       </div>
       {earnedBadges.length > 0 ? (
         <div class="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-0.5">
-          {earnedBadges.slice(0, 10).map(b => (
-            <div class="shrink-0 flex flex-col items-center gap-1 w-11">
-              <img src={`/badges/${b.img}`} alt={b.name} class="h-8 w-8 object-contain drop-shadow-sm" />
-              <p class="text-[8px] text-muted font-medium text-center leading-tight truncate w-full">{b.name}</p>
+          {earnedBadges.slice(0, 8).map(b => (
+            <div class="shrink-0 flex flex-col items-center gap-1 w-10">
+              <img src={`/badges/${b.img}`} alt={b.name} class="h-7 w-7 object-contain drop-shadow-sm" />
+              <p class="text-[7px] text-muted font-medium text-center leading-tight truncate w-full">{b.name}</p>
             </div>
           ))}
-          {earnedBadges.length > 10 && (
-            <div class="shrink-0 flex flex-col items-center justify-center gap-1 w-11">
-              <div class="h-8 w-8 rounded-full bg-canvas flex items-center justify-center">
-                <span class="text-[9px] font-bold text-muted">+{earnedBadges.length - 10}</span>
-              </div>
-              <p class="text-[8px] text-muted font-medium">más</p>
+          {earnedBadges.length > 8 && (
+            <div class="shrink-0 flex items-center justify-center w-10">
+              <span class="text-[10px] font-bold text-muted">+{earnedBadges.length - 8}</span>
             </div>
           )}
         </div>
       ) : (
-        <div class="flex items-center gap-2.5">
-          <div class="flex -space-x-1">
-            <div class="h-7 w-7 rounded-full bg-canvas border border-card-border flex items-center justify-center"><span class="text-[9px] grayscale opacity-30">🏅</span></div>
-            <div class="h-7 w-7 rounded-full bg-canvas border border-card-border flex items-center justify-center"><span class="text-[9px] grayscale opacity-30">💉</span></div>
-            <div class="h-7 w-7 rounded-full bg-canvas border border-card-border flex items-center justify-center"><span class="text-[9px] grayscale opacity-30">📸</span></div>
-          </div>
-          <p class="text-[11px] text-muted">Completa acciones para ganar insignias →</p>
-        </div>
+        <p class="text-[11px] text-muted">Completa acciones para ganar insignias →</p>
       )}
-      {/* Progress bar */}
       <div class="mt-2.5 h-1 rounded-full bg-canvas overflow-hidden">
         <div
           class="h-1 rounded-full transition-all duration-700"
@@ -802,45 +617,17 @@ try {
     </div>
   </a>
 
-  {/* ── QUICK ACTIONS ── */}
-  <p class="text-xs font-semibold text-muted uppercase tracking-widest mb-3 animate-fade-up animate-fade-up-delay-3">Acciones rápidas</p>
-  <div class="grid grid-cols-2 gap-3 animate-fade-up animate-fade-up-delay-3">
-    <a href="/salud/vacunas" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all duration-200 hover:border-accent/30 hover:shadow-sm active:scale-95">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10">
-        <svg class="h-4.5 w-4.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2-8.5 8.5v4h4l8.5-8.5a2.83 2.83 0 0 0-4-4z"/><path d="m18 2 4 4"/></svg>
+  {/* ── BREED FACT ── */}
+  {dailyFact && (
+    <div class="mb-5 animate-fade-up animate-fade-up-delay-2">
+      <div class="flex items-start gap-3 rounded-2xl border border-accent/15 bg-accent/5 px-4 py-3">
+        <span class="text-lg shrink-0 mt-0.5">{dailyFact.emoji}</span>
+        <div>
+          <p class="text-xs font-bold text-accent-dark mb-0.5">¿Sabías que...?</p>
+          <p class="text-xs text-ink/70 leading-relaxed">{dailyFact.fact}</p>
+        </div>
       </div>
-      <div>
-        <p class="text-sm font-semibold text-ink">Vacunas</p>
-        <p class="text-[11px] text-muted">Ver historial</p>
-      </div>
-    </a>
-    <a href="/salud/actividad" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all duration-200 hover:border-sky-200 hover:shadow-sm active:scale-95">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50">
-        <svg class="h-4.5 w-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-ink">Actividad</p>
-        <p class="text-[11px] text-muted">Registrar paseos</p>
-      </div>
-    </a>
-    <a href="/salud/peso" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all duration-200 hover:border-amber/30 hover:shadow-sm active:scale-95">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber/10">
-        <svg class="h-4.5 w-4.5 text-amber-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 0 1 8 0"/><line x1="12" y1="12" x2="12" y2="8"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-ink">Peso</p>
-        <p class="text-[11px] text-muted">Registrar nuevo</p>
-      </div>
-    </a>
-    <a href="/alimentacion" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all duration-200 hover:border-amber/30 hover:shadow-sm active:scale-95">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber/10">
-        <svg class="h-4.5 w-4.5 text-amber-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-ink">Alimentación</p>
-        <p class="text-[11px] text-muted">Ver dieta</p>
-      </div>
-    </a>
-  </div>
+    </div>
+  )}
 
 </MainLayout>

@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import { createSupabaseClient } from '../lib/supabase';
+import { createSupabaseClient, createSupabaseAdminClient } from '../lib/supabase';
 
 const supabase = createSupabaseClient(Astro.request, Astro.cookies);
 const { data: { user } } = await supabase.auth.getUser();
@@ -12,11 +12,56 @@ if (user) {
 const error = Astro.url.searchParams.get('error');
 const success = Astro.url.searchParams.get('success');
 
+// Referral code: from URL param, cookie, or form field
+const refFromUrl = Astro.url.searchParams.get('ref')?.trim().toUpperCase() || '';
+const refFromCookie = Astro.cookies.get('pending_referral')?.value || '';
+const initialRef = refFromUrl || refFromCookie;
+
+// Helper: validate referral code exists
+async function validateRefCode(code: string): Promise<boolean> {
+  if (!code) return false;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from('referral_codes')
+      .select('id')
+      .eq('code', code.toUpperCase())
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
+// Helper: save referral code to cookie for persistence across OAuth/email flows
+function saveRefCookie(code: string) {
+  if (code) {
+    Astro.cookies.set('pending_referral', code.toUpperCase(), {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      secure: import.meta.env.PROD,
+    });
+  }
+}
+
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const action = formData.get('action') as string;
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
+  const refCode = ((formData.get('ref_code') as string) || refFromUrl || refFromCookie)?.trim().toUpperCase();
+
+  // Validate referral code (invite-only)
+  const isValidRef = await validateRefCode(refCode);
+  if (!isValidRef) {
+    const refParam = refCode ? `&ref=${refCode}` : '';
+    return Astro.redirect(`/register?error=invalid_ref${refParam}`);
+  }
+
+  // Persist referral code in cookie so it survives OAuth redirect and email confirmation
+  saveRefCookie(refCode);
 
   if (action === 'google') {
     const origin = new URL(Astro.request.url).origin;
@@ -36,10 +81,10 @@ if (Astro.request.method === 'POST') {
     const confirmPassword = (formData.get('confirm_password') as string)?.trim();
 
     if (!cleanPassword || cleanPassword.length < 8) {
-      return Astro.redirect('/register?error=weak_password');
+      return Astro.redirect(`/register?error=weak_password&ref=${refCode}`);
     }
     if (cleanPassword !== confirmPassword) {
-      return Astro.redirect('/register?error=password_mismatch');
+      return Astro.redirect(`/register?error=password_mismatch&ref=${refCode}`);
     }
 
     const { data: signUpData, error: registerError } = await supabase.auth.signUp({
@@ -51,13 +96,18 @@ if (Astro.request.method === 'POST') {
       const code = msg.includes('already registered') || msg.includes('already exists') || msg.includes('user already')
         ? 'email_exists'
         : 'register_failed';
-      return Astro.redirect(`/register?error=${code}`);
+      return Astro.redirect(`/register?error=${code}&ref=${refCode}`);
     }
     if (!signUpData.user) {
-      return Astro.redirect('/register?error=register_failed');
+      return Astro.redirect(`/register?error=register_failed&ref=${refCode}`);
     }
     return Astro.redirect('/register?success=check_email');
   }
+}
+
+// If ref came from URL, save to cookie now (for when user fills form later)
+if (refFromUrl) {
+  saveRefCookie(refFromUrl);
 }
 ---
 
@@ -173,16 +223,35 @@ if (Astro.request.method === 'POST') {
               <div class="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
                 {error === 'register_failed' && 'No se pudo crear la cuenta. Intenta de nuevo.'}
                 {error === 'email_exists' && (
-                  <span>Este email ya tiene una cuenta. <a href="/login" class="font-semibold underline">Inicia sesión →</a></span>
+                  <span>Este email ya tiene una cuenta. <a href="/login" class="font-semibold underline">Inicia sesion →</a></span>
                 )}
                 {error === 'auth_failed' && 'Error al conectar con Google. Intenta de nuevo.'}
-                {error === 'weak_password' && 'La contraseña debe tener al menos 8 caracteres.'}
-                {error === 'password_mismatch' && 'Las contraseñas no coinciden.'}
+                {error === 'weak_password' && 'La contrasena debe tener al menos 8 caracteres.'}
+                {error === 'password_mismatch' && 'Las contrasenas no coinciden.'}
+                {error === 'invalid_ref' && 'Codigo de invitacion invalido. Necesitas que alguien te invite para registrarte.'}
+                {error === 'no_ref' && 'PetLog es solo por invitacion. Pide un codigo a alguien que ya use la app.'}
               </div>
             )}
 
+            <!-- Referral code (invite-only) -->
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-ink mb-1.5">Codigo de invitacion</label>
+              <input
+                type="text"
+                name="ref_code"
+                id="ref-code-input"
+                value={initialRef}
+                required
+                autocomplete="off"
+                placeholder="Ej: TINTO2847"
+                class="w-full rounded-xl border border-card-border bg-white px-4 py-2.5 text-ink placeholder-muted text-sm transition-all duration-200 hover:border-gray-300 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 uppercase tracking-wider font-mono"
+              />
+              <p class="text-xs text-muted mt-1">Te lo da alguien que ya usa PetLog</p>
+            </div>
+
             <!-- Google OAuth -->
             <form method="POST" id="google-form-reg">
+              <input type="hidden" name="ref_code" id="ref-code-google" value={initialRef} />
               <button
                 type="submit"
                 name="action"
@@ -209,6 +278,7 @@ if (Astro.request.method === 'POST') {
             <!-- Register form -->
             <form method="POST" class="space-y-4" id="register-form">
               <input type="hidden" name="action" value="register" />
+              <input type="hidden" name="ref_code" id="ref-code-email" value={initialRef} />
               <div>
                 <label class="block text-sm font-medium text-ink mb-1.5">Email</label>
                 <input
@@ -291,6 +361,19 @@ if (Astro.request.method === 'POST') {
 
     <script is:inline>
       function setupRegister() {
+        // Sync ref_code input to hidden fields in both forms
+        var refInput = document.getElementById('ref-code-input');
+        var refGoogle = document.getElementById('ref-code-google');
+        var refEmail = document.getElementById('ref-code-email');
+        if (refInput) {
+          refInput.addEventListener('input', function() {
+            var val = refInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            refInput.value = val;
+            if (refGoogle) refGoogle.value = val;
+            if (refEmail) refEmail.value = val;
+          });
+        }
+
         // Google loading state
         var googleFormReg = document.getElementById('google-form-reg');
         var btnGoogleReg = document.getElementById('btn-google-reg');

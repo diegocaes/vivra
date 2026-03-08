@@ -2,12 +2,18 @@
 import '../styles/global.css';
 import { calculateAge, formatDate } from '../lib/utils';
 import { getActivePet } from '../lib/pet';
+import { getPremiumStatus, canAccess } from '../lib/premium';
 
 const { supabase, user, activePetId } = Astro.locals;
 
 const { pet } = await getActivePet(supabase, user.id, activePetId);
 
 if (!pet) return Astro.redirect('/perfil?new=1');
+
+const premium = await getPremiumStatus(supabase, user.id);
+if (!canAccess('printPassport', premium)) {
+  return Astro.redirect('/premium');
+}
 
 const { data: vaccines } = await supabase
   .from('vaccines')

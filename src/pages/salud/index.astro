@@ -1,7 +1,9 @@
 ---
 import MainLayout from '../../layouts/MainLayout.astro';
 import SaludTabs from '../../components/SaludTabs.astro';
+import PremiumGate from '../../components/ui/PremiumGate.astro';
 import { getActivePet } from '../../lib/pet';
+import { getPremiumStatus } from '../../lib/premium';
 import { calculateVitalityScore } from '../../lib/vitality-score';
 import type { ScoreInput } from '../../lib/vitality-score';
 
@@ -9,6 +11,8 @@ const { supabase, user, activePetId } = Astro.locals;
 const { pet } = await getActivePet(supabase, user.id, activePetId);
 
 if (!pet) return Astro.redirect('/onboarding');
+
+const premium = await getPremiumStatus(supabase, user.id);
 
 const [
   { data: weightRecords },
@@ -106,38 +110,40 @@ const visitCount = vetVisits?.length ?? 0;
         <p class="text-xs text-muted mt-0.5 text-center max-w-xs">{score.subline}</p>
       </div>
 
-      {/* Pillar breakdown bars */}
-      <div class="pt-3 border-t border-card-border space-y-1">
-        {score.pillars.map(pillar => (
-          <div class="pillar-row">
-            <button type="button" class="pillar-toggle w-full flex items-center gap-2.5 py-1.5 rounded-xl transition-colors hover:bg-canvas/50 -mx-1 px-1">
-              <span class="text-sm shrink-0">{pillar.emoji}</span>
-              <p class="text-xs shrink-0 w-20 truncate text-muted font-medium text-left">{pillar.name}</p>
-              <div class="flex-1 rounded-full h-2 overflow-hidden bg-canvas">
-                <div
-                  class="h-2 rounded-full transition-all duration-700"
-                  style={`width: ${pillar.pct}%; background-color: ${pillar.pct >= 70 ? '#22C55E' : pillar.pct >= 40 ? '#F59E0B' : '#EF4444'};`}
-                />
+      {/* Pillar breakdown bars — premium */}
+      <PremiumGate isPremium={premium.isPremium} feature="vitalityDetails" title="Desglose detallado" description="Ve el score por pilar, flags y recomendaciones personalizadas.">
+        <div class="pt-3 border-t border-card-border space-y-1">
+          {score.pillars.map(pillar => (
+            <div class="pillar-row">
+              <button type="button" class="pillar-toggle w-full flex items-center gap-2.5 py-1.5 rounded-xl transition-colors hover:bg-canvas/50 -mx-1 px-1">
+                <span class="text-sm shrink-0">{pillar.emoji}</span>
+                <p class="text-xs shrink-0 w-20 truncate text-muted font-medium text-left">{pillar.name}</p>
+                <div class="flex-1 rounded-full h-2 overflow-hidden bg-canvas">
+                  <div
+                    class="h-2 rounded-full transition-all duration-700"
+                    style={`width: ${pillar.pct}%; background-color: ${pillar.pct >= 70 ? '#22C55E' : pillar.pct >= 40 ? '#F59E0B' : '#EF4444'};`}
+                  />
+                </div>
+                <p class="text-xs w-8 text-right font-bold text-ink shrink-0">{pillar.score}/{pillar.max}</p>
+              </button>
+              <div class="pillar-detail hidden ml-7 mr-1 mb-2 rounded-xl bg-canvas px-3 py-2.5">
+                <p class="text-[11px] text-muted leading-relaxed">{pillar.description}</p>
+                <p class="text-[11px] font-semibold text-ink mt-1.5">{pillar.status}</p>
+                {pillar.tips.length > 0 && (
+                  <ul class="mt-1.5 space-y-0.5">
+                    {pillar.tips.map(tip => (
+                      <li class="flex items-start gap-1.5">
+                        <div class="h-1 w-1 shrink-0 rounded-full bg-accent mt-1.5" />
+                        <p class="text-[11px] text-muted leading-relaxed">{tip}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <p class="text-xs w-8 text-right font-bold text-ink shrink-0">{pillar.score}/{pillar.max}</p>
-            </button>
-            <div class="pillar-detail hidden ml-7 mr-1 mb-2 rounded-xl bg-canvas px-3 py-2.5">
-              <p class="text-[11px] text-muted leading-relaxed">{pillar.description}</p>
-              <p class="text-[11px] font-semibold text-ink mt-1.5">{pillar.status}</p>
-              {pillar.tips.length > 0 && (
-                <ul class="mt-1.5 space-y-0.5">
-                  {pillar.tips.map(tip => (
-                    <li class="flex items-start gap-1.5">
-                      <div class="h-1 w-1 shrink-0 rounded-full bg-accent mt-1.5" />
-                      <p class="text-[11px] text-muted leading-relaxed">{tip}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </PremiumGate>
 
       {/* Quick stats row */}
       <div class="grid grid-cols-3 gap-3 pt-3 border-t border-card-border mt-3">
@@ -172,53 +178,93 @@ const visitCount = vetVisits?.length ?? 0;
     </div>
   )}
 
-  {/* ── ACCESOS RÁPIDOS ── */}
-  <div class="grid grid-cols-2 gap-3 mb-4 animate-fade-up animate-fade-up-delay-1">
-
+  {/* ── ACCESOS PRINCIPALES ── */}
+  <div class="space-y-2 mb-4 animate-fade-up animate-fade-up-delay-1">
     <a href="/salud/vacunas" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-accent/30 active:scale-95">
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10">
         <svg class="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2-8.5 8.5v4h4l8.5-8.5a2.83 2.83 0 0 0-4-4z"/><path d="m18 2 4 4"/></svg>
       </div>
-      <div>
+      <div class="flex-1">
         <p class="text-sm font-semibold text-ink">Vacunas</p>
-        <p class="text-[11px] text-muted">Historial y próximas</p>
+        <p class="text-[11px] text-muted">Historial y próximas dosis</p>
       </div>
-    </a>
-
-    <a href="/salud/historial" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-blue-200 active:scale-95">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
-        <svg class="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-ink">Historial vet.</p>
-        <p class="text-[11px] text-muted">Citas y consultas</p>
-      </div>
+      <span class="text-xs font-bold text-accent">{vaccineCount}</span>
+      <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
 
     <a href="/salud/peso" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-sky-200 active:scale-95">
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50">
         <svg class="h-4 w-4 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 0 1 8 0"/><line x1="12" y1="12" x2="12" y2="8"/></svg>
       </div>
-      <div>
+      <div class="flex-1">
         <p class="text-sm font-semibold text-ink">Peso</p>
         <p class="text-[11px] text-muted">Historial y tendencia</p>
       </div>
+      {latestWeight && <span class="text-xs font-bold text-ink">{latestWeight} kg</span>}
+      <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
 
-    <a href="/salud/grooming" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-pink-200 active:scale-95">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pink-50">
-        <svg class="h-4 w-4 text-pink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>
+    <a href="/salud/preventivos" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-green-200 active:scale-95">
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-50">
+        <svg class="h-4 w-4 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       </div>
-      <div>
-        <p class="text-sm font-semibold text-ink">Grooming</p>
-        <p class="text-[11px] text-muted">Baños y estética</p>
+      <div class="flex-1">
+        <p class="text-sm font-semibold text-ink">Preventivos</p>
+        <p class="text-[11px] text-muted">Antipulgas y desparasitante</p>
       </div>
+      <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
     </a>
 
+    <a href="/salud/actividad" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-sky-200 active:scale-95">
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50">
+        <svg class="h-4 w-4 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+      </div>
+      <div class="flex-1">
+        <p class="text-sm font-semibold text-ink">Actividad</p>
+        <p class="text-[11px] text-muted">Paseos y ejercicio</p>
+      </div>
+      <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </a>
   </div>
 
-  {/* ── INSIGHTS / RECOMENDACIONES ── */}
-  {score.showScore && score.pillars.some(p => p.tips.length > 0) && (
+  {/* ── VER MAS (accordion) ── */}
+  <div class="mb-4 animate-fade-up animate-fade-up-delay-1">
+    <button
+      type="button"
+      id="toggle-salud-more"
+      class="w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold text-muted hover:text-ink transition-colors"
+    >
+      <span id="salud-more-label">Ver más secciones</span>
+      <svg id="salud-more-icon" class="h-3.5 w-3.5 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div id="salud-more-content" class="hidden space-y-2 mt-2">
+      <a href="/salud/historial" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-blue-200 active:scale-95">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+          <svg class="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        </div>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-ink">Historial veterinario</p>
+          <p class="text-[11px] text-muted">Citas y consultas</p>
+        </div>
+        <span class="text-xs font-bold text-blue-500">{visitCount}</span>
+        <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+
+      <a href="/salud/grooming" class="flex items-center gap-3 rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-pink-200 active:scale-95">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pink-50">
+          <svg class="h-4 w-4 text-pink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>
+        </div>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-ink">Grooming</p>
+          <p class="text-[11px] text-muted">Baños y estética</p>
+        </div>
+        <svg class="h-4 w-4 text-muted/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+    </div>
+  </div>
+
+  {/* ── INSIGHTS / RECOMENDACIONES — premium ── */}
+  {score.showScore && premium.isPremium && score.pillars.some(p => p.tips.length > 0) && (
     <div class="mb-4 animate-fade-up animate-fade-up-delay-2">
       <div class="rounded-2xl border border-card-border bg-card overflow-hidden">
         <div class="flex items-center gap-2.5 px-4 py-3.5 border-b border-card-border">
@@ -249,8 +295,8 @@ const visitCount = vetVisits?.length ?? 0;
     </div>
   )}
 
-  {/* ── AVISOS — solo cuando hay score ── */}
-  {score.showScore && score.flags.length > 0 && (
+  {/* ── AVISOS — premium, solo cuando hay score ── */}
+  {score.showScore && premium.isPremium && score.flags.length > 0 && (
     <div class="mb-4 animate-fade-up animate-fade-up-delay-2">
       <p class="text-xs font-semibold text-muted uppercase tracking-widest mb-3">Para tener en cuenta</p>
       <div class="space-y-2">
@@ -287,12 +333,23 @@ const visitCount = vetVisits?.length ?? 0;
           var detail = btn.nextElementSibling;
           if (!detail || !detail.classList.contains('pillar-detail')) return;
           var wasOpen = !detail.classList.contains('hidden');
-          // Close all others
           document.querySelectorAll('.pillar-detail').forEach(function(d) { d.classList.add('hidden'); });
-          // Toggle current
           if (!wasOpen) detail.classList.remove('hidden');
         });
       });
+
+      var moreBtn = document.getElementById('toggle-salud-more');
+      var moreContent = document.getElementById('salud-more-content');
+      var moreIcon = document.getElementById('salud-more-icon');
+      var moreLabel = document.getElementById('salud-more-label');
+      if (moreBtn && moreContent) {
+        moreBtn.addEventListener('click', function() {
+          var isOpen = !moreContent.classList.contains('hidden');
+          moreContent.classList.toggle('hidden');
+          if (moreIcon) moreIcon.style.transform = isOpen ? '' : 'rotate(180deg)';
+          if (moreLabel) moreLabel.textContent = isOpen ? 'Ver más secciones' : 'Ver menos';
+        });
+      }
     });
   </script>
 
