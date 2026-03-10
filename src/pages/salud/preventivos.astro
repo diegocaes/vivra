@@ -43,8 +43,8 @@ const antipulgasList = (treatments ?? []).filter(t => t.type === 'antipulgas');
 const desparasitanteList = (treatments ?? []).filter(t => t.type === 'desparasitante');
 
 function daysUntilNext(lastDateStr: string | null | undefined) {
-  if (!lastDateStr) return { daysLeft: 0, overdue: true, lastDate: null };
-  const last = new Date(lastDateStr);
+  if (!lastDateStr) return { daysLeft: 0, overdue: true, nextDate: null };
+  const last = new Date(lastDateStr + 'T00:00:00');
   const next = new Date(last);
   next.setDate(next.getDate() + 30);
   const today = new Date();

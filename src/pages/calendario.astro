@@ -16,12 +16,19 @@ const [vaccinesRes, visitsRes, groomingsRes, flightsRes, preventivesRes] = await
   supabase.from('preventive_treatments').select('id, type, date_given, product_name').eq('pet_id', pet.id),
 ]);
 
+// Blood tests (table may not exist yet)
+let bloodTestsData: { id: string; date: string }[] = [];
+try {
+  const { data } = await supabase.from('blood_tests').select('id, date').eq('pet_id', pet.id);
+  bloodTestsData = data ?? [];
+} catch { /* table may not exist yet */ }
+
 interface CalendarEvent {
   id: string;
   date: string;
   title: string;
   subtitle: string;
-  category: 'vaccine' | 'vet' | 'grooming' | 'flight' | 'preventive' | 'reminder';
+  category: 'vaccine' | 'vet' | 'grooming' | 'flight' | 'preventive' | 'reminder' | 'blood_test';
   icon: string;
   color: string;
   href: string;
@@ -97,17 +104,71 @@ for (const f of flightsRes.data ?? []) {
   });
 }
 
-// Preventive treatments
+// Preventive treatments (past + next dose in 30 days)
 for (const p of preventivesRes.data ?? []) {
   events.push({
     id: `prev-${p.id}`,
     date: p.date_given,
     title: p.product_name || (p.type === 'antipulgas' ? 'Antipulgas' : 'Desparasitante'),
-    subtitle: p.type === 'antipulgas' ? 'Antipulgas' : 'Desparasitante',
+    subtitle: p.type === 'antipulgas' ? 'Antipulgas aplicado' : 'Desparasitante aplicado',
     category: 'preventive',
     icon: p.type === 'antipulgas' ? '🐛' : '💊',
     color: 'bg-green-50 text-green-600 border-green-100',
     href: '/salud/preventivos',
+  });
+}
+
+// Preventive next-dose reminders (30-day cycle from last application per type)
+const preventivesByType: Record<string, string[]> = {};
+for (const p of preventivesRes.data ?? []) {
+  if (!preventivesByType[p.type]) preventivesByType[p.type] = [];
+  preventivesByType[p.type].push(p.date_given);
+}
+for (const [type, dates] of Object.entries(preventivesByType)) {
+  const sorted = dates.sort((a, b) => b.localeCompare(a));
+  const lastDate = sorted[0];
+  const nextDate = new Date(lastDate + 'T00:00:00');
+  nextDate.setDate(nextDate.getDate() + 30);
+  const nextStr = nextDate.toISOString().split('T')[0];
+  events.push({
+    id: `prev-next-${type}`,
+    date: nextStr,
+    title: type === 'antipulgas' ? 'Próximo antipulgas' : 'Próximo desparasitante',
+    subtitle: 'Siguiente dosis',
+    category: 'reminder',
+    icon: '🔔',
+    color: 'bg-amber-50 text-amber-600 border-amber-100',
+    href: '/salud/preventivos',
+  });
+}
+
+// Blood tests (past + annual reminder)
+for (const bt of bloodTestsData) {
+  events.push({
+    id: `blood-${bt.id}`,
+    date: bt.date,
+    title: 'Examen de sangre',
+    subtitle: 'Análisis realizado',
+    category: 'blood_test',
+    icon: '🩸',
+    color: 'bg-red-50 text-red-600 border-red-100',
+    href: '/salud',
+  });
+}
+// Next annual blood test reminder
+if (bloodTestsData.length > 0) {
+  const lastBlood = bloodTestsData.sort((a, b) => b.date.localeCompare(a.date))[0];
+  const nextBlood = new Date(lastBlood.date + 'T00:00:00');
+  nextBlood.setFullYear(nextBlood.getFullYear() + 1);
+  events.push({
+    id: 'blood-next',
+    date: nextBlood.toISOString().split('T')[0],
+    title: 'Próximo examen de sangre',
+    subtitle: 'Recomendado anual',
+    category: 'reminder',
+    icon: '🔔',
+    color: 'bg-amber-50 text-amber-600 border-amber-100',
+    href: '/salud',
   });
 }
 
@@ -127,6 +188,7 @@ const months = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
 // Upcoming events (future dates)
 const today = new Date().toISOString().split('T')[0];
+const todayMonthKey = today.slice(0, 7); // "YYYY-MM"
 const upcoming = events.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
 
 function monthLabel(key: string) {
@@ -189,6 +251,7 @@ function dayLabel(dateStr: string) {
     <button type="button" class="cal-filter rounded-full px-3 py-1.5 text-[11px] font-semibold border transition-colors" data-cat="preventive">Preventivos</button>
     <button type="button" class="cal-filter rounded-full px-3 py-1.5 text-[11px] font-semibold border transition-colors" data-cat="flight">Vuelos</button>
     <button type="button" class="cal-filter rounded-full px-3 py-1.5 text-[11px] font-semibold border transition-colors" data-cat="grooming">Estética</button>
+    <button type="button" class="cal-filter rounded-full px-3 py-1.5 text-[11px] font-semibold border transition-colors" data-cat="blood_test">Sangre</button>
     <button type="button" class="cal-filter rounded-full px-3 py-1.5 text-[11px] font-semibold border transition-colors" data-cat="reminder">Recordatorios</button>
   </div>
 
@@ -207,32 +270,95 @@ function dayLabel(dateStr: string) {
 
   {/* ── TIMELINE BY MONTH ── */}
   <div class="space-y-5">
-    {months.map((monthKey, mi) => (
-      <div class:list={['animate-fade-up', mi < 5 && `animate-fade-up-delay-${Math.min(mi + 1, 5)}`]}>
-        <p class="text-xs font-semibold text-muted uppercase tracking-widest mb-3">{monthLabel(monthKey)}</p>
-        <div class="rounded-2xl bg-card border border-card-border divide-y divide-card-border overflow-hidden">
-          {grouped[monthKey].map((ev) => (
-            <a
-              href={ev.href}
-              class="cal-event flex items-center gap-3 px-4 py-3 hover:bg-canvas/50 transition-colors"
-              data-cat={ev.category}
-            >
-              <div class:list={['h-9 w-9 shrink-0 flex items-center justify-center rounded-xl border text-sm', ev.color]}>
-                {ev.icon}
+    {months.map((monthKey, mi) => {
+      const eventsInMonth = grouped[monthKey];
+      const isCurrentMonth = monthKey === todayMonthKey;
+      // Split events: future (>= today) and past (< today) — already sorted desc within month
+      const hasFuture = isCurrentMonth && eventsInMonth.some(e => e.date >= today);
+      const hasPast = isCurrentMonth && eventsInMonth.some(e => e.date < today);
+      const showTodayDivider = hasFuture && hasPast;
+
+      return (
+        <div class:list={['animate-fade-up', mi < 5 && `animate-fade-up-delay-${Math.min(mi + 1, 5)}`]}>
+          <div class="flex items-center gap-2 mb-3">
+            <p class="text-xs font-semibold text-muted uppercase tracking-widest">{monthLabel(monthKey)}</p>
+            {isCurrentMonth && (
+              <span class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">Mes actual</span>
+            )}
+          </div>
+          <div class="rounded-2xl bg-card border border-card-border divide-y divide-card-border overflow-hidden">
+            {/* "Hoy" divider at top if current month has only past events */}
+            {isCurrentMonth && !hasFuture && hasPast && (
+              <div class="flex items-center gap-3 px-4 py-2 bg-accent/5">
+                <div class="h-2 w-2 rounded-full bg-accent shrink-0"></div>
+                <div class="flex-1 h-px bg-accent/30"></div>
+                <span class="text-[11px] font-bold text-accent uppercase tracking-wider">Hoy</span>
+                <div class="flex-1 h-px bg-accent/30"></div>
+                <div class="h-2 w-2 rounded-full bg-accent shrink-0"></div>
               </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold text-ink truncate">{ev.title}</p>
-                <p class="text-[11px] text-muted">{ev.subtitle}</p>
+            )}
+            {eventsInMonth.map((ev, ei) => {
+              // Show "HOY" divider before the first past event (events sorted desc: future first, then past)
+              const prevEv = ei > 0 ? eventsInMonth[ei - 1] : null;
+              const needsDivider = showTodayDivider && ev.date < today && (!prevEv || prevEv.date >= today);
+              const isPast = ev.date < today;
+              const isToday = ev.date === today;
+
+              return (
+                <>
+                  {needsDivider && (
+                    <div class="flex items-center gap-3 px-4 py-2 bg-accent/5">
+                      <div class="h-2 w-2 rounded-full bg-accent shrink-0"></div>
+                      <div class="flex-1 h-px bg-accent/30"></div>
+                      <span class="text-[11px] font-bold text-accent uppercase tracking-wider">Hoy</span>
+                      <div class="flex-1 h-px bg-accent/30"></div>
+                      <div class="h-2 w-2 rounded-full bg-accent shrink-0"></div>
+                    </div>
+                  )}
+                  <a
+                    href={ev.href}
+                    class:list={[
+                      'cal-event flex items-center gap-3 px-4 py-3 hover:bg-canvas/50 transition-colors',
+                      isPast && !isToday && 'opacity-50',
+                      isToday && 'bg-accent/5',
+                    ]}
+                    data-cat={ev.category}
+                  >
+                    <div class:list={['h-9 w-9 shrink-0 flex items-center justify-center rounded-xl border text-sm', ev.color]}>
+                      {ev.icon}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-semibold text-ink truncate">{ev.title}</p>
+                      <p class="text-[11px] text-muted">{ev.subtitle}</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                      {isToday ? (
+                        <span class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">Hoy</span>
+                      ) : (
+                        <>
+                          <p class="text-xs font-semibold text-ink">{dayLabel(ev.date)}</p>
+                          <p class="text-[10px] text-muted">{ev.date.split('-')[0]}</p>
+                        </>
+                      )}
+                    </div>
+                  </a>
+                </>
+              );
+            })}
+            {/* "Hoy" divider at bottom if current month has only future events */}
+            {isCurrentMonth && hasFuture && !hasPast && (
+              <div class="flex items-center gap-3 px-4 py-2 bg-accent/5">
+                <div class="h-2 w-2 rounded-full bg-accent shrink-0"></div>
+                <div class="flex-1 h-px bg-accent/30"></div>
+                <span class="text-[11px] font-bold text-accent uppercase tracking-wider">Hoy</span>
+                <div class="flex-1 h-px bg-accent/30"></div>
+                <div class="h-2 w-2 rounded-full bg-accent shrink-0"></div>
               </div>
-              <div class="text-right shrink-0">
-                <p class="text-xs font-semibold text-ink">{dayLabel(ev.date)}</p>
-                <p class="text-[10px] text-muted">{ev.date.split('-')[0]}</p>
-              </div>
-            </a>
-          ))}
+            )}
+          </div>
         </div>
-      </div>
-    ))}
+      );
+    })}
   </div>
 
   <script is:inline>

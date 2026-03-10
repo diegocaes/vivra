@@ -120,3 +120,87 @@ export interface WeightRecord {
   notes: string | null;
   created_at: string;
 }
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  pet_id: string | null;
+  type: string;
+  title: string;
+  message: string;
+  icon: string | null;
+  href: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface PushToken {
+  id: string;
+  user_id: string;
+  token: string;
+  platform: 'ios' | 'android';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserSubscription {
+  id: string;
+  user_id: string;
+  plan: 'free' | 'premium';
+  source: 'referral' | 'iap' | 'promo' | 'trial' | null;
+  premium_until: string | null;
+  trial_ends_at: string | null;
+  iap_product_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReferralCode {
+  id: string;
+  user_id: string;
+  code: string;
+  uses_count: number;
+  created_at: string;
+}
+
+export interface Referral {
+  id: string;
+  referrer_id: string;
+  referred_id: string;
+  code: string;
+  status: 'pending' | 'completed' | 'rewarded';
+  reward_granted: boolean;
+  created_at: string;
+}
+
+export interface Treat {
+  id: string;
+  pet_id: string;
+  name: string;
+  brand: string | null;
+  price: number | null;
+  purchase_date: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PreventiveTreatment {
+  id: string;
+  pet_id: string;
+  type: 'antipulgas' | 'desparasitante';
+  brand: string | null;
+  date_applied: string;
+  next_due: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ActivityLog {
+  id: string;
+  pet_id: string;
+  date: string;
+  walks: number;
+  duration_minutes: number | null;
+  notes: string | null;
+  created_at: string;
+}

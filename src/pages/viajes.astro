@@ -83,12 +83,12 @@ if (Astro.request.method === 'POST') {
     if (customs !== null) updateData.customs_cost = customs;
     if (airport !== null) updateData.airport_cost = airport;
 
-    const { error } = await supabase.from('flights').update(updateData).eq('id', flightId);
+    const { error } = await supabase.from('flights').update(updateData).eq('id', flightId).eq('pet_id', pet.id);
     if (error && (error.message?.includes('paperwork_cost') || error.message?.includes('customs_cost') || error.message?.includes('airport_cost'))) {
       delete updateData.paperwork_cost;
       delete updateData.customs_cost;
       delete updateData.airport_cost;
-      await supabase.from('flights').update(updateData).eq('id', flightId);
+      await supabase.from('flights').update(updateData).eq('id', flightId).eq('pet_id', pet.id);
     }
     return Astro.redirect('/viajes?saved=1');
   }
@@ -110,7 +110,7 @@ if (Astro.request.method === 'POST') {
       }
     }
     await supabase.from('flight_documents').delete().eq('flight_id', flightId);
-    await supabase.from('flights').delete().eq('id', flightId);
+    await supabase.from('flights').delete().eq('id', flightId).eq('pet_id', pet.id);
     return Astro.redirect('/viajes?deleted=1');
   }
 

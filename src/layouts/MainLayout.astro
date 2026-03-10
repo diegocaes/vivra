@@ -4,8 +4,6 @@ import FormEnhancements from '../components/ui/FormEnhancements.astro';
 import Toast from '../components/ui/Toast.astro';
 import { ClientRouter } from 'astro:transitions';
 import { getActivePet } from '../lib/pet';
-import { getPremiumStatus } from '../lib/premium';
-import type { PremiumStatus } from '../lib/premium';
 import '../styles/global.css';
 
 interface Props {
@@ -37,10 +35,6 @@ if (user) {
   unreadCount = count ?? 0;
 }
 
-// Premium status (queried once, available to all pages via Astro.locals-like pattern)
-const premium: PremiumStatus = user
-  ? await getPremiumStatus(supabase, user.id)
-  : { isPremium: false, plan: 'free', source: null, daysLeft: 0, isTrial: false, isExpiringSoon: false };
 
 ---
 

@@ -266,8 +266,8 @@ CREATE POLICY "Users read own subscription" ON user_subscriptions
 
 - [ ] 0.1 — Registrar Apple Developer Program ($99)
 - [ ] 0.2 — Crear app en App Store Connect (Bundle ID: com.petlog.app)
-- [ ] 0.3 — Crear página `/privacy` en la web (requerida por Apple)
-- [ ] 0.4 — Crear página `/terms` en la web (requerida por Apple)
+- [x] 0.3 — Crear página `/privacy` en la web (requerida por Apple) ✅
+- [x] 0.4 — Crear página `/terms` en la web (requerida por Apple) ✅
 - [ ] 0.5 — Ejecutar SQL de nuevas tablas en Supabase (push_tokens, referrals, user_subscriptions)
 - [ ] 0.6 — Configurar Google OAuth para iOS (agregar Bundle ID en Google Cloud Console)
 - [ ] 0.7 — Crear cuenta en Expo (expo.dev) y configurar EAS

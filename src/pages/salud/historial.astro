@@ -39,11 +39,11 @@ if (Astro.request.method === 'POST') {
       treatment: (formData.get('treatment') as string) || null,
       cost: formData.get('cost') ? Number(formData.get('cost')) : null,
       notes: (formData.get('notes') as string) || null,
-    }).eq('id', visitId);
+    }).eq('id', visitId).eq('pet_id', pet.id);
   }
   if (action === 'delete') {
     const visitId = formData.get('visit_id') as string;
-    await supabase.from('vet_visits').delete().eq('id', visitId);
+    await supabase.from('vet_visits').delete().eq('id', visitId).eq('pet_id', pet.id);
     return Astro.redirect('/salud/historial?deleted=1');
   }
   return Astro.redirect('/salud/historial?saved=1');
@@ -186,7 +186,7 @@ const lastVisitDays = visits?.[0]
                 <button type="button" class="edit-btn rounded-xl p-2 text-gray-300 transition-colors hover:bg-accent/10 hover:text-accent" data-id={visit.id} title="Editar">
                   <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                 </button>
-                <form method="POST">
+                <form method="POST" onsubmit="return confirm('¿Eliminar esta visita?')">
                   <input type="hidden" name="_action" value="delete" />
                   <input type="hidden" name="visit_id" value={visit.id} />
                   <button type="submit" class="rounded-xl p-2 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500" title="Eliminar">

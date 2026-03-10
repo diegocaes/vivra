@@ -32,7 +32,11 @@
       'transition-all duration-300 opacity-0 translate-y-2 scale-95',
       colors[type],
     ].join(' ');
-    toast.innerHTML = icons[type] + `<span>${message}</span>`;
+    const iconHtml = icons[type];
+    const span = document.createElement('span');
+    span.textContent = message;
+    toast.innerHTML = iconHtml;
+    toast.appendChild(span);
 
     container.appendChild(toast);
 
@@ -80,9 +84,6 @@
     }
   }
 
-  // Run on first load
-  checkUrlParams();
-
-  // Run after Astro View Transitions navigation
+  // astro:page-load fires on initial load AND after View Transitions navigation
   document.addEventListener('astro:page-load', checkUrlParams);
 </script>

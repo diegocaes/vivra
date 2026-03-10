@@ -127,15 +127,20 @@ if (Astro.request.method === 'POST') {
 
   const newWeight = formData.get('weight_kg') ? Number(formData.get('weight_kg')) : null;
 
+  const rawName = (formData.get('name') as string)?.trim().slice(0, 100);
+  if (!rawName) {
+    return Astro.redirect('/perfil?error=name_required');
+  }
+
   const petData = {
     user_id: user.id,
-    name: formData.get('name') as string,
-    breed,
+    name: rawName,
+    breed: breed?.slice(0, 100) || null,
     birth_date: (formData.get('birth_date') as string) || null,
     gender: (formData.get('gender') as string) || null,
     weight_kg: newWeight,
-    chip_id: (formData.get('chip_id') as string) || null,
-    color: (formData.get('color') as string) || null,
+    chip_id: ((formData.get('chip_id') as string)?.trim().slice(0, 50)) || null,
+    color: ((formData.get('color') as string)?.trim().slice(0, 50)) || null,
     theme_color: (formData.get('theme_color') as string) || 'orange',
     birth_city: (formData.get('birth_city') as string)?.trim() || null,
     birth_country: (formData.get('birth_country') as string)?.trim() || null,

@@ -27,36 +27,57 @@ if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const action = formData.get('_action') as string;
 
-  const fields = {
-    brand:       formData.get('brand') as string,
-    type:        (formData.get('type') as string) || null,
-    daily_grams: formData.get('daily_grams') ? Number(formData.get('daily_grams')) : null,
-    frequency:   (formData.get('frequency') as string) || null,
-    bag_size:    formData.get('bag_size') ? Number(formData.get('bag_size')) : null,
-    bag_unit:    (formData.get('bag_unit') as string) || 'kg',
-    price:       formData.get('price') ? Number(formData.get('price')) : null,
-    start_date:  (formData.get('start_date') as string) || null,
-    notes:       (formData.get('notes') as string) || null,
-  };
+  // ── Food actions ──
+  if (action === 'add' || action === 'edit' || action === 'delete') {
+    const fields = {
+      brand:       formData.get('brand') as string,
+      type:        (formData.get('type') as string) || null,
+      daily_grams: formData.get('daily_grams') ? Number(formData.get('daily_grams')) : null,
+      frequency:   (formData.get('frequency') as string) || null,
+      bag_size:    formData.get('bag_size') ? Number(formData.get('bag_size')) : null,
+      bag_unit:    (formData.get('bag_unit') as string) || 'kg',
+      price:       formData.get('price') ? Number(formData.get('price')) : null,
+      start_date:  (formData.get('start_date') as string) || null,
+      notes:       (formData.get('notes') as string) || null,
+    };
 
-  if (action === 'add') {
-    const { count: foodCount } = await supabase.from('foods').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id);
-    if (isAtLimit('maxFoods', foodCount ?? 0, premium)) {
-      return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent('Límite alcanzado. Refiere un amigo o suscríbete a Premium para ilimitados.'));
+    if (action === 'add') {
+      const { count: foodCount } = await supabase.from('foods').select('id', { count: 'exact', head: true }).eq('pet_id', pet.id);
+      if (isAtLimit('maxFoods', foodCount ?? 0, premium)) {
+        return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent('Límite alcanzado. Refiere un amigo o suscríbete a Premium para ilimitados.'));
+      }
+      const { error } = await supabase.from('foods').insert({ pet_id: pet.id, ...fields });
+      if (error) return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent(error.message));
     }
-    const { error } = await supabase.from('foods').insert({ pet_id: pet.id, ...fields });
-    if (error) return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent(error.message));
+
+    if (action === 'edit') {
+      const foodId = formData.get('food_id') as string;
+      const { error } = await supabase.from('foods').update(fields).eq('id', foodId).eq('pet_id', pet.id);
+      if (error) return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent(error.message));
+    }
+
+    if (action === 'delete') {
+      const foodId = formData.get('food_id') as string;
+      await supabase.from('foods').delete().eq('id', foodId).eq('pet_id', pet.id);
+      return Astro.redirect('/alimentacion?deleted=1');
+    }
   }
 
-  if (action === 'edit') {
-    const foodId = formData.get('food_id') as string;
-    const { error } = await supabase.from('foods').update(fields).eq('id', foodId);
-    if (error) return Astro.redirect('/alimentacion?toast_error=' + encodeURIComponent(error.message));
+  // ── Treat actions ──
+  if (action === 'add_treat') {
+    await supabase.from('treats').insert({
+      pet_id: pet.id,
+      name: formData.get('treat_name') as string,
+      brand: (formData.get('treat_brand') as string) || null,
+      price: formData.get('treat_price') ? Number(formData.get('treat_price')) : null,
+      purchase_date: (formData.get('treat_date') as string) || null,
+      notes: (formData.get('treat_notes') as string) || null,
+    });
+    return Astro.redirect('/alimentacion?saved=1');
   }
 
-  if (action === 'delete') {
-    const foodId = formData.get('food_id') as string;
-    await supabase.from('foods').delete().eq('id', foodId);
+  if (action === 'delete_treat') {
+    await supabase.from('treats').delete().eq('id', formData.get('treat_id') as string).eq('pet_id', pet.id);
     return Astro.redirect('/alimentacion?deleted=1');
   }
 
@@ -93,6 +114,19 @@ const currentFood = foods[0] ?? null;
 const avgDaysPerBag = foods.filter(f => f.daysTotal).length > 0
   ? Math.round(foods.filter(f => f.daysTotal).reduce((s, f) => s + f.daysTotal!, 0) / foods.filter(f => f.daysTotal).length)
   : null;
+
+// Fetch treats
+let treats: any[] = [];
+try {
+  const { data: rawTreats } = await supabase
+    .from('treats')
+    .select('*')
+    .eq('pet_id', pet.id)
+    .order('created_at', { ascending: false });
+  treats = rawTreats ?? [];
+} catch { /* table may not exist yet */ }
+
+const totalTreatSpend = treats.filter(t => t.price).reduce((s: number, t: any) => s + t.price, 0);
 
 function bagStatusText(daysRemaining: number | null, daysElapsed: number | null): string | null {
   if (daysRemaining === null) return null;
@@ -174,22 +208,39 @@ function bagStatusText(daysRemaining: number | null, daysElapsed: number | null)
     </div>
   )}
 
-  {/* ── FORM (colapsable) ── */}
+  {/* ── BOTONES REGISTRO (lado a lado) ── */}
   <div class="mb-5 animate-fade-up animate-fade-up-delay-1">
-    <button
-      type="button"
-      id="toggle-food-form"
-      class="w-full flex items-center justify-between rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-accent/30 active:scale-95"
-    >
-      <div class="flex items-center gap-2.5">
-        <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/10">
-          <svg class="h-3.5 w-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+    <div class="grid grid-cols-2 gap-3">
+      <button
+        type="button"
+        id="toggle-food-form"
+        class="flex items-center justify-between rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-accent/30 active:scale-95"
+      >
+        <div class="flex items-center gap-2">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/10">
+            <svg class="h-3.5 w-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <p class="text-xs font-semibold text-ink">Alimento</p>
         </div>
-        <p class="text-sm font-semibold text-ink">Registrar alimento</p>
-      </div>
-      <svg id="toggle-food-icon" class="h-4 w-4 text-muted transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-    </button>
+        <svg id="toggle-food-icon" class="h-3.5 w-3.5 text-muted transition-transform shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
 
+      <button
+        type="button"
+        id="toggle-treat-form"
+        class="flex items-center justify-between rounded-2xl bg-card border border-card-border px-4 py-3.5 transition-all hover:border-amber-200 active:scale-95"
+      >
+        <div class="flex items-center gap-2">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-amber/10">
+            <svg class="h-3.5 w-3.5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <p class="text-xs font-semibold text-ink">Snack</p>
+        </div>
+        <svg id="toggle-treat-icon" class="h-3.5 w-3.5 text-muted transition-transform shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    {/* Food form */}
     <div id="food-form-body" class="hidden mt-2">
       <Card>
         <form method="POST" class="space-y-4">
@@ -260,6 +311,42 @@ function bagStatusText(daysRemaining: number | null, daysElapsed: number | null)
           </button>
         </form>
       </Card>
+    </div>
+
+    {/* Treat form */}
+    <div id="treat-form-body" class="hidden mt-2">
+      <div class="rounded-2xl border border-card-border bg-card p-5">
+        <form method="POST" class="space-y-3">
+          <input type="hidden" name="_action" value="add_treat" />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Nombre <span class="text-red-500">*</span></label>
+              <input type="text" name="treat_name" required placeholder="Ej: Dentastix" class="w-full rounded-xl border border-card-border bg-canvas px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent transition-colors" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Marca</label>
+              <input type="text" name="treat_brand" placeholder="Ej: Pedigree" class="w-full rounded-xl border border-card-border bg-canvas px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent transition-colors" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Precio ($)</label>
+              <input type="number" name="treat_price" step="0.01" min="0" placeholder="Ej: 8.50" class="w-full rounded-xl border border-card-border bg-canvas px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent transition-colors" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Fecha de compra</label>
+              <input type="date" name="treat_date" class="w-full rounded-xl border border-card-border bg-canvas px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent transition-colors" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Notas</label>
+            <input type="text" name="treat_notes" placeholder="Sabor, tamaño, reacción..." class="w-full rounded-xl border border-card-border bg-canvas px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent transition-colors" />
+          </div>
+          <button type="submit" class="w-full rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-accent-dark active:scale-95">
+            Registrar premio
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -448,6 +535,33 @@ function bagStatusText(daysRemaining: number | null, daysElapsed: number | null)
         });
       });
 
+      // Treat form toggle (mutual exclusivity with food form)
+      var toggleTreatBtn = document.getElementById('toggle-treat-form');
+      var treatFormBody = document.getElementById('treat-form-body');
+      var toggleTreatIcon = document.getElementById('toggle-treat-icon');
+      if (toggleTreatBtn) {
+        toggleTreatBtn.addEventListener('click', function() {
+          var isOpen = treatFormBody && !treatFormBody.classList.contains('hidden');
+          if (treatFormBody) treatFormBody.classList.toggle('hidden');
+          if (toggleTreatIcon) toggleTreatIcon.style.transform = isOpen ? '' : 'rotate(180deg)';
+          // Close food form when opening treat form
+          if (!isOpen && formBody && !formBody.classList.contains('hidden')) {
+            formBody.classList.add('hidden');
+            if (toggleIcon) toggleIcon.style.transform = '';
+          }
+        });
+      }
+
+      // Close treat form when opening food form
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+          if (treatFormBody && !treatFormBody.classList.contains('hidden')) {
+            treatFormBody.classList.add('hidden');
+            if (toggleTreatIcon) toggleTreatIcon.style.transform = '';
+          }
+        });
+      }
+
       // Close food form when navigating away (prevents accidental submit)
       var menuBtn = document.getElementById('mobile-menu-btn');
       if (menuBtn && formBody) {
@@ -461,6 +575,39 @@ function bagStatusText(daysRemaining: number | null, daysElapsed: number | null)
     }
     document.addEventListener('astro:page-load', setupAlimentacion);
   </script>
+
+  {/* ── TREATS / PREMIOS ── */}
+  {treats.length > 0 && (
+    <div class="mt-6 mb-5 animate-fade-up">
+      <p class="text-xs font-semibold text-muted uppercase tracking-widest mb-3">Premios y snacks</p>
+      <div class="rounded-2xl bg-card border border-card-border divide-y divide-card-border overflow-hidden">
+        {treats.map((t: any) => (
+          <div class="flex items-center gap-3 px-4 py-3">
+            <div class="h-9 w-9 shrink-0 flex items-center justify-center rounded-xl bg-amber/10 text-base">🦴</div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-semibold text-ink">{t.name}{t.brand ? ` · ${t.brand}` : ''}</p>
+              <p class="text-[11px] text-muted">
+                {t.price ? `$${t.price}` : ''}{t.purchase_date ? `${t.price ? ' · ' : ''}${formatDate(t.purchase_date)}` : ''}
+              </p>
+              {t.notes && <p class="text-[11px] text-muted/70 truncate mt-0.5">{t.notes}</p>}
+            </div>
+            <form method="POST">
+              <input type="hidden" name="_action" value="delete_treat" />
+              <input type="hidden" name="treat_id" value={t.id} />
+              <button type="submit" class="p-1.5 rounded-lg text-muted/40 hover:text-red-400 hover:bg-red-50 transition-colors" onclick="return confirm('¿Eliminar este premio?')">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            </form>
+          </div>
+        ))}
+        {totalTreatSpend > 0 && (
+          <div class="px-4 py-2.5 bg-canvas">
+            <p class="text-[11px] text-muted text-center">Total gastado en premios: <span class="font-semibold text-ink">${totalTreatSpend.toFixed(2)}</span></p>
+          </div>
+        )}
+      </div>
+    </div>
+  )}
 
   <p class="mt-10 mb-4 text-center text-xs text-muted/40 leading-relaxed max-w-xs mx-auto">Una buena alimentación es la base de la salud de tu mascota. Registra su dieta actual para saber cuándo se acaba el alimento y llevar el control de costos.</p>
 

@@ -63,6 +63,10 @@ export interface FoodRecord {
   type: string | null;     // column name in foods table
 }
 
+export interface BloodTestRecord {
+  date: string; // ISO date
+}
+
 export interface ScoreInput {
   pet: PetData;
   weightRecords: WeightRecord[];
@@ -71,6 +75,7 @@ export interface ScoreInput {
   groomings: GroomingRecord[];
   activityLogs: ActivityLogRecord[];
   foods: FoodRecord[];
+  bloodTests?: BloodTestRecord[];
 }
 
 // ─── Tipos de salida ─────────────────────────────────────────────────────────
@@ -351,7 +356,19 @@ function scoreCuidado(input: ScoreInput): PillarScore {
     }
   }
 
-  const total = clamp(vaccineScore + vetScore, 2, 20);
+  // Bonus: examen de sangre anual (+2 pts si hay uno reciente, -1 si nunca)
+  const bloodTests = input.bloodTests ?? [];
+  const hasRecentBlood = bloodTests.some(bt => daysBetween(bt.date) <= 365);
+  let bloodBonus = 0;
+  if (hasRecentBlood) {
+    bloodBonus = 2;
+  } else if (bloodTests.length === 0) {
+    tips.push('Un examen de sangre anual ayuda a detectar problemas a tiempo');
+  } else {
+    tips.push('Ha pasado más de un año desde el último examen de sangre');
+  }
+
+  const total = clamp(vaccineScore + vetScore + bloodBonus, 2, 20);
   let status: string;
   if (total >= 18) status = 'Cuidado preventivo al día';
   else if (total >= 14) status = 'Buen seguimiento preventivo';
@@ -735,6 +752,21 @@ function buildFlags(input: ScoreInput): ScoreFlag[] {
     }
   }
 
+  // Recordatorio: examen de sangre anual
+  const bloodTests = input.bloodTests ?? [];
+  const hasRecentBloodTest = bloodTests.some(bt => daysBetween(bt.date) <= 365);
+  if (!hasRecentBloodTest) {
+    flags.push({
+      id: 'blood_test',
+      severity: bloodTests.length === 0 ? 'tip' : 'reminder',
+      message: bloodTests.length === 0
+        ? 'Un examen de sangre anual es clave para la detección temprana'
+        : 'Ha pasado más de un año desde el último examen de sangre',
+      action: 'Registrar examen de sangre',
+      href: '/salud/historial',
+    });
+  }
+
   // Recordatorio: faltan datos clave (solo si hay pocos datos)
   if (foods.length === 0) {
     flags.push({
@@ -832,7 +864,7 @@ export function calculateVitalityScore(input: ScoreInput): VitalityScoreResult {
 
   // Pilar 4: Actividad (paseos o grooming)
   if (input.activityLogs.length === 0 && groomings.length === 0) {
-    pendingAreas.push({ label: 'Registra paseos o sesiones de grooming', href: '/salud/actividad' });
+    pendingAreas.push({ label: 'Registra paseos o sesiones de grooming', href: '/actividad' });
   }
 
   // Pilar 5: Alimentación

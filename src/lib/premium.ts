@@ -93,10 +93,15 @@ export type LimitKey = keyof typeof LIMITS.free;
  * Pure function — no DB calls, works anywhere (web, iOS, tests).
  */
 export function evaluatePremium(sub: UserSubscription | null): PremiumStatus {
-  // Force premium for local testing
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.FORCE_PREMIUM === 'true') {
-    return { isPremium: true, plan: 'premium', source: 'promo', daysLeft: 999, isTrial: false, isExpiringSoon: false };
-  }
+  // Force premium for local testing (works in Astro/Vite and React Native)
+  try {
+    const forcePremium =
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.FORCE_PREMIUM === 'true') ||
+      (typeof process !== 'undefined' && (process as any).env?.FORCE_PREMIUM === 'true');
+    if (forcePremium) {
+      return { isPremium: true, plan: 'premium', source: 'promo', daysLeft: 999, isTrial: false, isExpiringSoon: false };
+    }
+  } catch { /* ignore in environments where neither is available */ }
 
   if (!sub || sub.plan !== 'premium' || !sub.premium_until) {
     return { isPremium: false, plan: 'free', source: null, daysLeft: 0, isTrial: false, isExpiringSoon: false };

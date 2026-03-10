@@ -1,7 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { createSupabaseClient } from './lib/supabase';
 
-const PUBLIC_ROUTES = ['/', '/login', '/register', '/forgot-password', '/api/auth/callback'];
+const PUBLIC_ROUTES = ['/', '/login', '/register', '/forgot-password', '/api/auth/callback', '/privacy', '/terms'];
 
 function withUtf8(response: Response): Response {
   const contentType = response.headers.get('content-type');
@@ -15,7 +15,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
 
   // Allow public routes (exact match for '/', prefix match for others)
-  if (PUBLIC_ROUTES.some((route) => route === '/' ? pathname === '/' : pathname.startsWith(route))) {
+  if (PUBLIC_ROUTES.some((route) => route === '/' ? pathname === '/' : pathname === route || pathname.startsWith(route + '/'))) {
     return withUtf8(await next());
   }
 

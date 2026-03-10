@@ -14,7 +14,8 @@ const navItems = [
   { href: '/dashboard',     match: '/dashboard',    label: 'Inicio',     icon: 'home' },
   { href: '/salud',         match: '/salud',        label: 'Salud',      icon: 'heart' },
   { href: '/alimentacion',  match: '/alimentacion', label: 'Comida',     icon: 'food' },
-  { href: '/badges',        match: '/badges',       label: 'Insignias',  icon: 'trophy' },
+  { href: '/actividad',     match: '/actividad',    label: 'Actividad',  icon: 'activity' },
+  { href: '/calendario',    match: '/calendario',   label: 'Calendario', icon: 'calendar' },
 ];
 
 function isActive(match: string): boolean {
@@ -313,6 +314,12 @@ function petInitial(name: string) {
     <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/>
     <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
   </symbol>
+  <symbol id="sbi-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>
+  </symbol>
+  <symbol id="sbi-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+  </symbol>
   <symbol id="sbi-gift" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/>
     <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>
@@ -418,6 +425,5 @@ function petInitial(name: string) {
     setupPetSwitcher('pet-trigger-mobile', 'pet-dropdown-mobile', 'pet-chevron-mobile', 'pet-switcher-mobile');
   }
 
-  setup();
   document.addEventListener('astro:page-load', setup);
 </script>

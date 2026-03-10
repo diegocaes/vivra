@@ -25,13 +25,18 @@ if (Astro.request.method === 'POST') {
       return Astro.redirect('/salud/peso?toast_error=' + encodeURIComponent('Límite alcanzado. Refiere un amigo o suscríbete a Premium para ilimitados.'));
     }
     const weightKg = Number(formData.get('weight_kg'));
+    const recordDate = formData.get('date') as string;
     await supabase.from('weight_records').insert({
       pet_id: pet.id,
       weight_kg: weightKg,
-      date: formData.get('date') as string,
+      date: recordDate,
       notes: (formData.get('notes') as string) || null,
     });
-    await supabase.from('pets').update({ weight_kg: weightKg }).eq('id', pet.id);
+    // Only update pet's current weight if this is the most recent record
+    const { data: latestRecord } = await supabase.from('weight_records').select('date').eq('pet_id', pet.id).order('date', { ascending: false }).limit(1);
+    if (!latestRecord?.[0] || recordDate >= latestRecord[0].date) {
+      await supabase.from('pets').update({ weight_kg: weightKg }).eq('id', pet.id);
+    }
   }
   if (action === 'delete') {
     await supabase.from('weight_records').delete().eq('id', formData.get('record_id') as string);
@@ -170,7 +175,7 @@ const maxWeight = records && records.length > 0 ? Math.max(...records.map(r => r
                 {record.notes && <p class="text-xs text-gray-400 mt-0.5">{record.notes}</p>}
               </div>
             </div>
-            <form method="POST">
+            <form method="POST" onsubmit="return confirm('¿Eliminar este registro?')">
               <input type="hidden" name="_action" value="delete" />
               <input type="hidden" name="record_id" value={record.id} />
               <button type="submit" class="shrink-0 rounded-xl p-2 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500" title="Eliminar">
