@@ -21,6 +21,7 @@ export type HealthRisk =
   | 'cancer'
   | 'obesity'
   | 'eye_disease'
+  | 'ear_disease'
   | 'skin_disease'
   | 'bloat'
   | 'patellar_luxation'
@@ -35,7 +36,17 @@ export type HealthRisk =
   | 'luxating_patella'
   | 'laryngeal_paralysis'
   | 'portosystemic_shunt'
-  | 'legg_calve_perthes';
+  | 'legg_calve_perthes'
+  | 'syringomyelia'
+  | 'collie_eye_anomaly'
+  | 'pancreatitis'
+  | 'deafness'
+  | 'urate_stones'
+  | 'shar_pei_fever'
+  | 'kidney_disease'
+  | 'thyroid_disease'
+  | 'diabetes'
+  | 'protein_losing_nephropathy';
 
 export interface BreedProfile {
   /** Nombre para mostrar */

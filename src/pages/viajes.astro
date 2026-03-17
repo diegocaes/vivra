@@ -95,22 +95,31 @@ if (Astro.request.method === 'POST') {
 
   if (action === 'delete_flight') {
     const flightId = formData.get('flight_id') as string;
-    const { data: docs } = await supabase
-      .from('flight_documents')
-      .select('file_url')
-      .eq('flight_id', flightId);
-    if (docs && docs.length > 0) {
-      const paths = docs.map((d) => {
-        const url = new URL(d.file_url);
-        const parts = url.pathname.split('/storage/v1/object/public/flight-docs/');
-        return parts[1] || '';
-      }).filter(Boolean);
-      if (paths.length > 0) {
-        await supabase.storage.from('flight-docs').remove(paths);
+    // Verify the flight belongs to this pet before deleting anything
+    const { data: ownedFlight } = await supabase
+      .from('flights')
+      .select('id')
+      .eq('id', flightId)
+      .eq('pet_id', pet.id)
+      .single();
+    if (ownedFlight) {
+      const { data: docs } = await supabase
+        .from('flight_documents')
+        .select('file_url')
+        .eq('flight_id', flightId);
+      if (docs && docs.length > 0) {
+        const paths = docs.map((d) => {
+          const url = new URL(d.file_url);
+          const parts = url.pathname.split('/storage/v1/object/public/flight-docs/');
+          return parts[1] || '';
+        }).filter(Boolean);
+        if (paths.length > 0) {
+          await supabase.storage.from('flight-docs').remove(paths);
+        }
       }
+      await supabase.from('flight_documents').delete().eq('flight_id', flightId);
+      await supabase.from('flights').delete().eq('id', flightId).eq('pet_id', pet.id);
     }
-    await supabase.from('flight_documents').delete().eq('flight_id', flightId);
-    await supabase.from('flights').delete().eq('id', flightId).eq('pet_id', pet.id);
     return Astro.redirect('/viajes?deleted=1');
   }
 
@@ -144,15 +153,31 @@ if (Astro.request.method === 'POST') {
   if (action === 'delete_doc') {
     const docId = formData.get('doc_id') as string;
     const fileUrl = formData.get('file_url') as string;
-    try {
-      const url = new URL(fileUrl);
-      const parts = url.pathname.split('/storage/v1/object/public/flight-docs/');
-      const storagePath = parts[1] || '';
-      if (storagePath) {
-        await supabase.storage.from('flight-docs').remove([storagePath]);
+    // Verify doc belongs to a flight owned by this pet
+    const { data: doc } = await supabase
+      .from('flight_documents')
+      .select('id, flight_id')
+      .eq('id', docId)
+      .single();
+    if (doc) {
+      const { data: flight } = await supabase
+        .from('flights')
+        .select('id')
+        .eq('id', doc.flight_id)
+        .eq('pet_id', pet.id)
+        .single();
+      if (flight) {
+        try {
+          const url = new URL(fileUrl);
+          const parts = url.pathname.split('/storage/v1/object/public/flight-docs/');
+          const storagePath = parts[1] || '';
+          if (storagePath) {
+            await supabase.storage.from('flight-docs').remove([storagePath]);
+          }
+        } catch {}
+        await supabase.from('flight_documents').delete().eq('id', docId);
       }
-    } catch {}
-    await supabase.from('flight_documents').delete().eq('id', docId);
+    }
     return Astro.redirect('/viajes?deleted=1');
   }
 

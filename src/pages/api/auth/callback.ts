@@ -13,7 +13,7 @@ export const GET: APIRoute = async ({ request, cookies, redirect }) => {
 
   if (tokenHash && type) {
     // Email OTP flow (signup confirmation, recovery, magiclink)
-    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as any });
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as 'signup' | 'recovery' | 'email' | 'magiclink' });
     if (error) {
       return redirect('/login?error=link_expired');
     }

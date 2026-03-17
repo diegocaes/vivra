@@ -85,7 +85,7 @@ if (Astro.request.method === 'POST') {
     return Astro.redirect('/salud?saved=1');
   }
   if (action === 'delete_blood_test') {
-    await supabase.from('blood_tests').delete().eq('id', formData.get('blood_test_id') as string);
+    await supabase.from('blood_tests').delete().eq('id', formData.get('blood_test_id') as string).eq('pet_id', pet.id);
     return Astro.redirect('/salud?deleted=1');
   }
 }

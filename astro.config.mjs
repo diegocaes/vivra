@@ -8,10 +8,14 @@ export default defineConfig({
   output: 'server',
   adapter: vercel(),
   integrations: [react()],
+  prefetch: {
+    prefetchAll: true,
+    defaultStrategy: 'viewport',
+  },
   vite: {
     plugins: [tailwindcss()],
   },
   security: {
-    checkOrigin: false,
+    checkOrigin: true,
   },
 });

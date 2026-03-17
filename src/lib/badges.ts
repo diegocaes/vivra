@@ -123,8 +123,8 @@ export const VACCINE_BADGES: { keyword: string; id: string; name: string; img: s
   { keyword: 'parvo',      id: 'vac-parvo',      name: 'Parvovirus',    img: 'vacunas/parvo.png' },
   { keyword: 'moquillo',   id: 'vac-moquillo',   name: 'Moquillo',      img: 'vacunas/moquillo.png' },
   { keyword: 'bordetella', id: 'vac-bordetella', name: 'Bordetella',    img: 'vacunas/bordetella.png' },
-  { keyword: 'lepto',      id: 'vac-lepto',      name: 'Leptospirosis', img: 'vacunas/Lepto.png' },
-  { keyword: 'hepatitis',  id: 'vac-hepatitis',  name: 'Hepatitis',     img: 'vacunas/Hepatitis.png' },
+  { keyword: 'lepto',      id: 'vac-lepto',      name: 'Leptospirosis', img: 'vacunas/lepto.png' },
+  { keyword: 'hepatitis',  id: 'vac-hepatitis',  name: 'Hepatitis',     img: 'vacunas/hepatitis.png' },
 ];
 
 // ── EVALUATE ───────────────────────────────────────────────

@@ -39,7 +39,7 @@ if (Astro.request.method === 'POST') {
     }
   }
   if (action === 'delete') {
-    await supabase.from('weight_records').delete().eq('id', formData.get('record_id') as string);
+    await supabase.from('weight_records').delete().eq('id', formData.get('record_id') as string).eq('pet_id', pet.id);
     return Astro.redirect('/salud/peso?deleted=1');
   }
   return Astro.redirect('/salud/peso?saved=1');
